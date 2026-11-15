@@ -62,6 +62,13 @@ export interface MessageEvent {
 	text: string;
 }
 
+const CJK = /[\u4e00-\u9fff]/;
+
+/** The bot's own words follow the user's, so nobody gets a message they cannot read. */
+function bilingual(sample: string, zh: string, en: string): string {
+	return CJK.test(sample) ? zh : en;
+}
+
 /**
  * A conversation per chat, so memory and history follow the person rather
  * than the process.
@@ -168,7 +175,11 @@ export class Bot {
 				conversation: row.conversation,
 				channel: chat.channel,
 				target: chat.target,
-				text: '刚才那条消息处理到一半中断了，我没能回上来。麻烦再说一次。',
+				text: bilingual(
+					row.text,
+					'刚才那条消息处理到一半中断了，我没能回上来。麻烦再说一次。',
+					'I was cut off while answering that one, so nothing was said back. Could you send it again?',
+				),
 			});
 		}
 		if (interrupted.length > 0) console.warn(`[bot] ${interrupted.length} interrupted event(s) closed`);
@@ -202,7 +213,11 @@ export class Bot {
 				conversation,
 				channel: event.channel,
 				target: event.target,
-				text: answer.allowed ? '好，继续。' : '好，这件事不做了。',
+				text: bilingual(
+					event.text,
+					answer.allowed ? '好，继续。' : '好，这件事不做了。',
+					answer.allowed ? 'Approved, continuing.' : 'Understood, dropped.',
+				),
 			});
 			return true;
 		}
@@ -268,7 +283,11 @@ export class Bot {
 				conversation: conversationId,
 				channel: target.channel,
 				target: target.target,
-				text: `这次没能回答（${reason}）。可以再说一次，或者稍后让我重试。`,
+				text: bilingual(
+					text,
+					`这次没能回答（${reason}）。可以再说一次，或者稍后让我重试。`,
+					`That one did not come back (${reason}). Send it again, or ask me to retry later.`,
+				),
 			});
 			return;
 		}

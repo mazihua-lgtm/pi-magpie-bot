@@ -39,7 +39,7 @@ export async function askApproval(
 		conversation: chat.conversation,
 		channel: chat.channel,
 		target: chat.target,
-		text: `⚠️ 需要你同意才能继续：\n${action}\n\n回复「是」执行，回复「否」取消。5 分钟内没有回复就当作取消。`,
+		text: `⚠️ 需要你同意才能继续 / needs your approval:\n${action}\n\n回复「是」执行，回「否」取消 / reply "yes" to run it, "no" to drop it（5 分钟内不回复即取消 / dropped after 5 minutes）`,
 	});
 
 	const sleep = options.sleep ?? ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)));
