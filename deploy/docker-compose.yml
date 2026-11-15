@@ -4,15 +4,19 @@
 #   docker compose -f deploy/docker-compose.yml up -d
 #
 # magpie 只在内部网络里，不对外开端口；对外只有网页聊天。
+#
+# 起来之后还要把免费路线开一次（新容器里还没有这个组）：
+#   docker compose -f deploy/docker-compose.yml exec magpie \
+#     /magpie plugin add https://github.com/mu-zi-lee/magpie-our-free-model
+#   docker compose -f deploy/docker-compose.yml exec magpie \
+#     /magpie group add free 'models=our-free-model/*' routing=smart
+# 然后 docker compose -f deploy/docker-compose.yml restart bot
 services:
   magpie:
     image: ghcr.io/yetone/magpie:latest
     restart: unless-stopped
     volumes:
       - magpie-config:/config
-    # 装一次免费模型插件，之后一直有
-    # docker compose -f deploy/docker-compose.yml exec magpie \
-    #   magpie plugin add https://github.com/mu-zi-lee/magpie-our-free-model
 
   bot:
     build:

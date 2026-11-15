@@ -1,0 +1,12 @@
+# The image installs its own dependencies; a laptop's tree is not one of them.
+node_modules
+**/node_modules
+dist
+**/dist
+.git
+.github
+data
+.env
+.env.*
+!.env.example
+*.log

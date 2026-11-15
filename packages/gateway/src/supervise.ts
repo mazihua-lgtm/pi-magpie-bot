@@ -28,7 +28,16 @@ export async function ensureGateway(config: GatewayConfig, options: EnsureGatewa
 	const timeoutMs = options.timeoutMs ?? 30_000;
 	const deadline = Date.now() + timeoutMs;
 	if (await healthcheck(config)) return;
-	if (options.start === false) throw new Error(`magpie gateway is not answering at ${config.baseUrl}`);
+	if (options.start === false) {
+		// Someone else owns the gateway (another container, another machine): it
+		// may still be booting, so wait for it rather than start a second one.
+		const message = `magpie gateway is not answering at ${config.baseUrl}`;
+		while (Date.now() < deadline) {
+			await sleep(500);
+			if (await healthcheck(config)) return;
+		}
+		throw new Error(`${message} (waited ${timeoutMs}ms)`);
+	}
 
 	const binary = options.binary ?? findMagpieBinary();
 	if (!binary) {

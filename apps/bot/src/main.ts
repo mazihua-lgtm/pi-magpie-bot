@@ -11,7 +11,7 @@ import { join, resolve } from 'node:path';
 import { Bot } from '@pi-magpie-bot/brain';
 import { TelegramChannel } from '@pi-magpie-bot/channel-telegram';
 import { WebChannel } from '@pi-magpie-bot/channel-web';
-import { ensureGateway, gatewayConfig } from '@pi-magpie-bot/gateway';
+import { ensureGateway, gatewayConfig, listModels } from '@pi-magpie-bot/gateway';
 
 /** A `.env` beside the checkout, so a user can set a token in a text editor. */
 function loadDotEnv(path: string): void {
@@ -40,7 +40,24 @@ console.log('[bot] starting up');
 console.log(`[bot] data in ${dataDir}`);
 
 const config = gatewayConfig();
-await ensureGateway(config, { start: env.MAGPIE_BIN !== 'none' });
+await ensureGateway(config, { start: env.MAGPIE_START !== '0' });
+
+// A brand-new gateway has no routing groups, and an empty model name fails much
+// later and much less clearly: say what to run while the user is still looking.
+const wanted = env.MAGPIE_MODEL?.trim();
+if (wanted) {
+	const ids = (await listModels(config)).map((model) => model.id);
+	if (!ids.includes(wanted)) {
+		console.error(`[bot] magpie has no model "${wanted}"`);
+		if (wanted === 'group/free') {
+			console.error('[bot] the free route has to be created once:');
+			console.error('[bot]   magpie plugin add https://github.com/mu-zi-lee/magpie-our-free-model');
+			console.error(`[bot]   magpie group add free 'models=our-free-model/*' routing=smart`);
+		}
+		console.error(`[bot] available now: ${ids.slice(0, 12).join(', ')}${ids.length > 12 ? ', …' : ''}`);
+		process.exit(1);
+	}
+}
 
 const bot = await Bot.open({
 	dataDir,

@@ -64,6 +64,16 @@ cp .env.example .env        # 填 TELEGRAM_BOT_TOKEN 和 WEB_PASSWORD（公网�
 docker compose -f deploy/docker-compose.yml up -d
 ```
 
+新起来的 magpie 里还没有免费路线，开一次、重启 bot 就行（只有第一次要）：
+
+```sh
+docker compose -f deploy/docker-compose.yml exec magpie \
+  /magpie plugin add https://github.com/mu-zi-lee/magpie-our-free-model
+docker compose -f deploy/docker-compose.yml exec magpie \
+  /magpie group add free 'models=our-free-model/*' routing=smart
+docker compose -f deploy/docker-compose.yml restart bot
+```
+
 只有网页端口对外，magpie 在内部网络里。要网页版一直开着，就把 `WEB_HOST=0.0.0.0` 留给容器、`WEB_PASSWORD` 设成你自己记得住的。
 
 > 说明：免费池按出口 IP 限量。云服务器上大概率拿不到免费模型，云端模式请自带 key 或接本地模型。
@@ -88,6 +98,7 @@ docker compose -f deploy/docker-compose.yml up -d
 | --- | --- | --- |
 | `MAGPIE_MODEL` | `group/free` | 用哪个模型；免费池是 `group/free` |
 | `MAGPIE_BASE_URL` | `http://127.0.0.1:3425` | 网关地址 |
+| `MAGPIE_START` | `1` | 设 `0` 就只连现成的 magpie，不自己启动（Docker/远程网关） |
 | `DATA_DIR` | `~/.pi-magpie-bot` | 对话、记忆、任务都在这 |
 | `WEB_PORT` / `WEB_HOST` | `8787` / `127.0.0.1` | 网页聊天；`WEB_PORT=0` 关掉 |
 | `WEB_PASSWORD` | 空 | 设了就要密码才能进网页 |
