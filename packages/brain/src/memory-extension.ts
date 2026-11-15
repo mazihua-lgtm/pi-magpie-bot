@@ -1,0 +1,65 @@
+import { defineExtension, defineTool, section, type Extension } from '@earendil-works/pi-durable';
+import { obj, opt, str } from '@earendil-works/pi-schema';
+import type { MemoryStore } from '@pi-magpie-bot/memory';
+
+/** A tool's answer, as the transcript stores it. */
+const reply = (text: string, isError = false) => ({
+	output: [{ type: 'text' as const, text }],
+	...(isError ? { isError: true } : {}),
+});
+
+/**
+ * Memory as tools the model reaches for, plus one prompt section that only
+ * carries the index. The notes themselves stay on disk until asked for.
+ */
+export function createMemoryExtension(store: MemoryStore): Extension {
+	return defineExtension({
+		name: 'memory',
+		tools: [
+			defineTool({
+				name: 'memory_write',
+				description:
+					'Save one durable fact about the user (who they are, what they prefer, a decision they made that should hold next time). One note per fact; writing the same name again replaces it.',
+				parameters: obj({
+					name: str({ description: 'Short slug, e.g. "work-hours" or "prefers-short-answers".' }),
+					content: str({ description: 'The fact, in full sentences.' }),
+				}),
+				async execute(args, api) {
+					await store.writeNote(api.conversationId, args.name, args.content);
+					return reply(`remembered "${args.name}"`);
+				},
+			}),
+			defineTool({
+				name: 'memory_read',
+				description: 'Read a saved note in full, by the name the memory index shows.',
+				parameters: obj({ name: str() }),
+				async execute(args, api) {
+					const content = await store.readNote(api.conversationId, args.name);
+					return reply(content || `no note named "${args.name}"`);
+				},
+			}),
+			defineTool({
+				name: 'memory_search',
+				description: 'Find notes by what they say, for when the index is not enough.',
+				parameters: obj({ query: str() }),
+				async execute(args, api) {
+					const hits = await store.search(api.conversationId, args.query);
+					if (hits.length === 0) return reply('nothing found');
+					return reply(hits.map((hit) => `${hit.name}\n${hit.snippet}`).join('\n\n'));
+				},
+			}),
+		],
+		sections: [
+			section('memory', async (input) => {
+				const [instructions, index] = await Promise.all([
+					store.readInstructions(input.conversationId),
+					store.readIndex(input.conversationId),
+				]);
+				const parts: string[] = [];
+				if (instructions.trim()) parts.push(`What the user asked you to always do:\n${instructions.trim()}`);
+				if (index.trim()) parts.push(`Your saved notes (read one with memory_read):\n${index.trim()}`);
+				return parts.length > 0 ? parts.join('\n\n') : undefined;
+			}),
+		],
+	});
+}

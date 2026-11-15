@@ -1,0 +1,16 @@
+{
+	"name": "@pi-magpie-bot/channel-web",
+	"version": "0.0.1",
+	"type": "module",
+	"license": "MIT",
+	"main": "./src/index.ts",
+	"exports": {
+		".": {
+			"types": "./src/index.ts",
+			"default": "./src/index.ts"
+		}
+	},
+	"dependencies": {
+		"@pi-magpie-bot/brain": "workspace:*"
+	}
+}

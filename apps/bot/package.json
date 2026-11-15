@@ -1,0 +1,17 @@
+{
+	"name": "@pi-magpie-bot/bot",
+	"version": "0.0.1",
+	"type": "module",
+	"license": "MIT",
+	"bin": { "pi-magpie-bot": "./src/main.ts" },
+	"scripts": {
+		"start": "tsx src/main.ts"
+	},
+	"dependencies": {
+		"@pi-magpie-bot/brain": "workspace:*",
+		"@pi-magpie-bot/channel-telegram": "workspace:*",
+		"@pi-magpie-bot/channel-web": "workspace:*",
+		"@pi-magpie-bot/events": "workspace:*",
+		"@pi-magpie-bot/gateway": "workspace:*"
+	}
+}

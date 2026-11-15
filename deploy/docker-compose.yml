@@ -1,0 +1,38 @@
+# 云端模式 / cloud mode:
+#
+#   cp .env.example .env        # 填 TELEGRAM_BOT_TOKEN 和 WEB_PASSWORD
+#   docker compose -f deploy/docker-compose.yml up -d
+#
+# magpie 只在内部网络里，不对外开端口；对外只有网页聊天。
+services:
+  magpie:
+    image: ghcr.io/yetone/magpie:latest
+    restart: unless-stopped
+    volumes:
+      - magpie-config:/config
+    # 装一次免费模型插件，之后一直有
+    # docker compose -f deploy/docker-compose.yml exec magpie \
+    #   magpie plugin add https://github.com/mu-zi-lee/magpie-our-free-model
+
+  bot:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    depends_on:
+      - magpie
+    environment:
+      MAGPIE_BASE_URL: http://magpie:3425
+      MAGPIE_API_KEY: ${MAGPIE_API_KEY:-magpie}
+      MAGPIE_MODEL: ${MAGPIE_MODEL:-group/free}
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
+      WEB_PASSWORD: ${WEB_PASSWORD:-}
+      ALLOWED_USERS: ${ALLOWED_USERS:-}
+    ports:
+      - "${WEB_PORT:-8787}:8787"
+    volumes:
+      - bot-data:/data
+
+volumes:
+  magpie-config:
+  bot-data:
