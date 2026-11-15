@@ -23,7 +23,7 @@ Grok Bot 这类产品好用，但你的对话、记忆、日程都在别人服�
 
 ## 快速开始 / Quick start
 
-需要有 **Node.js 22 或更新**（[下载](https://nodejs.org)）。macOS、Linux、Windows 的 WSL 都行。
+需要有 **Node.js 24 或更新**（[下载](https://nodejs.org)；内置数据库用它自带的 SQLite）。macOS、Linux、Windows 的 WSL 都行。
 
 ```sh
 ./install.sh          # 装依赖、装 magpie、配免费模型

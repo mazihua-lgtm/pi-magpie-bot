@@ -54,6 +54,7 @@ export class TelegramChannel implements Channel {
 	private readonly pollSeconds: number;
 	private running = false;
 	private offset = 0;
+	private hinted = false;
 	private loop: Promise<void> | undefined;
 
 	constructor(private readonly options: TelegramOptions) {
@@ -90,6 +91,12 @@ export class TelegramChannel implements Channel {
 			} catch (error) {
 				// A network blip is not a reason to stop being a bot.
 				console.error('[telegram] poll failed:', error instanceof Error ? error.message : error);
+				if (!this.hinted) {
+					this.hinted = true;
+					console.error(
+						`[telegram] if ${this.apiBase} is blocked on this network, set TELEGRAM_API_BASE to a mirror of the Bot API`,
+					);
+				}
 				await new Promise((resolve) => setTimeout(resolve, 3_000));
 			}
 		}

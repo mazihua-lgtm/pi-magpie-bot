@@ -30,11 +30,11 @@ done
 
 # --- 1. Node -----------------------------------------------------------------
 if ! command -v node >/dev/null 2>&1; then
-	die "Node.js 22 or newer is required: https://nodejs.org (LTS is fine)"
+	die "Node.js 24 or newer is required (the built-in SQLite needs it): https://nodejs.org"
 fi
 NODE_MAJOR="$(node -p 'process.versions.node.split(".")[0]')"
-if [ "$NODE_MAJOR" -lt 22 ]; then
-	die "Node.js $(node -v) is too old; 22 or newer is required: https://nodejs.org"
+if [ "$NODE_MAJOR" -lt 24 ]; then
+	die "Node.js $(node -v) is too old; 24 or newer is required: https://nodejs.org"
 fi
 say "node $(node -v)"
 
