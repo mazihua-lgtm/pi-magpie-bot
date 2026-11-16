@@ -98,6 +98,15 @@ async function saveKey(input: { preset: string; key: string }): Promise<string> 
 }
 
 /**
+ * The key box needs a magpie of this machine's own to talk to. Under compose the
+ * bot container only speaks HTTP to the gateway container, so that page keeps
+ * to the commands — which there are run with `docker compose exec`.
+ */
+function canSaveKey(): boolean {
+	return env.MAGPIE_START !== '0' || Boolean(findMagpieBinary(env, [join(ourBinDir, 'magpie')]));
+}
+
+/**
  * A setup step that only a person can take is a state, not a crash: the reason
  * goes to the terminal and to a page, and the process stays up. Under
  * `docker compose` the alternative is a container restarting forever with the
@@ -110,7 +119,7 @@ async function needsSetup(options: SetupPageOptions & { console?: string[] }): P
 	const { url, fixed } = await serveSetupPage({
 		...page,
 		presets: VENDORS,
-		onKey: saveKey,
+		...(canSaveKey() ? { onKey: saveKey } : {}),
 		host: env.WEB_HOST ?? '127.0.0.1',
 		port: Number(env.WEB_PORT ?? 8787),
 	});

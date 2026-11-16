@@ -18,7 +18,7 @@ Grok Bot 这类产品好用，但你的对话、记忆、日程都在别人服�
 
 - **不要钱就能用**：免费池由 [our-free-model](https://github.com/Ebony-Vinyl/dsh-our-free-model) 提供，插件由社区维护，不用注册账号、不用 key。第一次启动时自动装好、自动登录，之后就不用人管；想更稳、想用大模型，换成自己的就行，一个模型名就能切。
 - **数据在你手里**：对话、记忆、定时任务都是本地 SQLite 和 Markdown 文件，拷走就是迁移。
-- **断电不死**：回复生成到一半电脑被合上，重启后接着干，不会重复回你两遍。
+- **断电不死**：消息先落盘再处理，重启后照常接着干，不会同一句回答你两遍；真被掐断在回答一半的那条，它会主动跟你说一声「刚才那条中断了」。
 - **能碰到的东西要你点头**：让它读写你的文件夹、执行命令，每次都要在聊天里回「是」。
 
 ## 快速开始 / Quick start
@@ -95,7 +95,7 @@ docker compose -f deploy/docker-compose.yml restart bot
 
 `-it` 不能省：它要一个终端才弹菜单。插件第一次会下载自己的 Node 运行时，容器得能出网到 `nodejs.org`，下不来会报「自动安装 Node 失败」——那就走下面的自带 key。
 
-模型还没弄好时 bot 不会反复重启：打开网页端口会看到一页说明，写着差哪一步、该敲什么。
+模型还没弄好时 bot 不会反复重启：打开网页端口会看到一页说明，写着差哪一步、该敲什么。容器里的 bot 只跟网关容器说 HTTP、自己手里没有 magpie，所以这一页在云端只给命令；本机跑的时候这一页还会带一个 key 输入框（见上面「用你自己的模型」）。
 
 只有网页端口对外，magpie 在内部网络里。要网页版一直开着，就把 `WEB_HOST=0.0.0.0` 留给容器、`WEB_PASSWORD` 设成你自己记得住的。
 
@@ -107,7 +107,7 @@ docker compose -f deploy/docker-compose.yml restart bot
 | --- | --- | --- |
 | 聊天 | 直接说 | pi-durable 的持久化会话 |
 | 记事 | 「记住我的车是蓝色比亚迪」 | `memory/` 下的 Markdown，索引每次进上下文，正文按需读 |
-| 提醒 | 「明早七点叫我」 | `schedules` 表 + 每分钟检查，进程挂了补一次 |
+| 提醒 | 「明早七点叫我」 | `schedules` 表 + 每 2 秒看一次（`TICK_MS` 可改），进程挂了下次启动补一次 |
 | 长任务先回一句 | 它自己判断 | `send_message` 工具先发后干 |
 | 读写文件 / 执行命令 | 在 `.env` 设 `WORKSPACE_DIR` | 每次执行前发审批卡，回「是」才动 |
 | 网页 | `pnpm start` | 内置 HTTP 服务，无外部依赖 |
@@ -137,7 +137,7 @@ docker compose -f deploy/docker-compose.yml restart bot
 - **[pi-durable](https://github.com/earendil-works/pi)** —— 持久化运行、崩溃恢复、重试、压缩、信号与休眠，全在它上面。我们不重写执行引擎。
 - **[magpie](https://github.com/yetone/magpie)** —— 一个网关说 OpenAI / Anthropic / Gemini 三种协议，路由组自动在多个免费模型间切换、失败换下一个。换模型不用改一行代码。
 - **[our-free-model](https://github.com/Ebony-Vinyl/dsh-our-free-model)** 及其 [magpie 插件](https://github.com/mu-zi-lee/magpie-our-free-model) —— 匿名免费模型池。
-- 上层这层薄薄的胶水（收件箱、发件箱、定时表、审批表、记忆目录、频道适配）是这个项目自己的，加起来不到两千行，看得完。
+- 上层这层薄薄的胶水（收件箱、发件箱、定时表、审批表、记忆目录、频道适配）是这个项目自己的，`packages/*/src` 加起来三千行上下，看得完。
 
 ```
 Telegram / 网页 ──▶ inbox（去重、排队）──▶ pi-durable 会话 ──▶ outbox ──▶ 你
@@ -173,4 +173,4 @@ MIT。第三方组件与出处见 [NOTICE.md](NOTICE.md)。
 
 ---
 
-**English summary.** An always-on personal assistant built on [pi-durable](https://github.com/earendil-works/pi) with [magpie](https://github.com/yetone/magpie) as the single gateway to every model. It runs headless or in Docker, talks over Telegram or a built-in web page, remembers things in plain Markdown, keeps reminders in SQLite across restarts, and gates shell/file access behind an approval card in the chat. By default it uses an anonymous free model pool, so a first-time user needs no account and no key; `./install.sh` then `pnpm start` is the whole setup. MIT licensed.
+**English summary.** An always-on personal assistant built on [pi-durable](https://github.com/earendil-works/pi) with [magpie](https://github.com/yetone/magpie) as the single gateway to every model. It runs headless or in Docker, talks over Telegram or a built-in web page, remembers things in plain Markdown, keeps reminders in SQLite across restarts, and gates shell/file access behind an approval card in the chat. By default it uses an anonymous free model pool, so a first-time user needs no account and no key: `pnpm install` and `pnpm start` is the whole setup, and a message that was cut off mid-answer by a crash is closed and reported once rather than answered twice. A key of your own can be pasted into the first-run page, no terminal needed. MIT licensed.
