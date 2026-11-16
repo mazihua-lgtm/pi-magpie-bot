@@ -1,5 +1,7 @@
 # pi-magpie-bot
 
+中文 · **[English](README.en.md)**
+
 一个一直在线、会记事、会提醒你的私人助理。跑在你自己的电脑或服务器上，用免费模型就能开口说话：不用注册账号，不用 API key。
 
 An always-on personal assistant you run yourself. Memory, reminders and a chat window on any of your devices. It talks to free models out of the box — no account, no API key, no bill.
@@ -175,4 +177,4 @@ MIT。第三方组件与出处见 [NOTICE.md](NOTICE.md)。
 
 ---
 
-**English summary.** An always-on personal assistant built on [pi-durable](https://github.com/earendil-works/pi) with [magpie](https://github.com/yetone/magpie) as the single gateway to every model. It runs headless or in Docker, talks over Telegram or a built-in web page, remembers things in plain Markdown, keeps reminders in SQLite across restarts, and gates shell/file access behind an approval card in the chat. By default it uses an anonymous free model pool, so a first-time user needs no account and no key: `pnpm install` and `pnpm start` is the whole setup, and a message that was cut off mid-answer by a crash is closed and reported once rather than answered twice. A key of your own can be pasted into the first-run page, no terminal needed. MIT licensed.
+**English.** A full English README, one to one with this one, is at **[README.en.md](README.en.md)**.
