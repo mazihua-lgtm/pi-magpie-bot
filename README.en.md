@@ -138,8 +138,8 @@ is missing and what to run. The bot in a container only speaks HTTP to the gatew
 has no magpie of its own, so that page keeps to commands there; run locally it also offers the key
 box described above.
 
-Only the web port is exposed; magpie stays on the internal network. To keep the page up, leave
-`WEB_HOST=0.0.0.0` to the container and make `WEB_PASSWORD` something you will remember.
+Only the web port is exposed; magpie stays on the internal network. It is published to this machine only
+(`WEB_BIND=127.0.0.1`); to reach it from a phone or another device, set `WEB_BIND=0.0.0.0` and always set `WEB_PASSWORD`.
 
 > Note: the free pool is limited per egress IP. A cloud server will most likely get nothing from
 > it — on a server, bring a key or a local model.
@@ -169,6 +169,7 @@ Only the web port is exposed; magpie stays on the internal network. To keep the 
 | `TZ` | the system zone | reminders and "what time is it" use it; Docker defaults to `Asia/Shanghai` |
 | `WEB_PORT` / `WEB_HOST` | `8787` / `127.0.0.1` | the chat page; `WEB_PORT=0` turns it off |
 | `WEB_PASSWORD` | empty | set it and the page asks for it |
+| `WEB_BIND` | `127.0.0.1` | compose only: the address the web port is published on |
 | `TELEGRAM_BOT_TOKEN` | empty | set it and Telegram is connected |
 | `WORKSPACE_DIR` | empty | only with it can the bot read files and run commands (each one approved) |
 | `ALLOWED_USERS` | empty | who else may talk to it, besides the owner |
@@ -208,6 +209,13 @@ a crash: **[docs/architecture.md](docs/architecture.md)**, with an English secti
 - One process per data directory (SQLite has a single writer).
 - An approval card only takes a short yes/no; anything else you type while a card is open is
   treated as a new message.
+- Reading, writing, editing files and running commands **all need your approval**, but paths
+  outside the working directory are guarded only by that card, with no sandbox: read the path
+  before you approve.
+- Telegram takes private chats only; group messages are ignored. With `ALLOWED_USERS` set, nobody
+  can claim the bot first-come; only the listed people can use it.
+- The Telegram offset advances before a message is handled: a crash mid-handling loses that one
+  message (at most once, never answered twice).
 
 ## Development
 

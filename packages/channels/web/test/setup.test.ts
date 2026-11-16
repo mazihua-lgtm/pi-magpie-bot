@@ -85,6 +85,27 @@ describe('the key box', () => {
 		expect(await fixed).toBe(true);
 	});
 
+	it('refuses a key that was not posted as JSON from this page', async () => {
+		const saved: unknown[] = [];
+		const { url } = await serve({
+			title: '还不能聊天',
+			reason: '没有模型',
+			steps: [],
+			presets: VENDORS,
+			onKey: async (input) => {
+				saved.push(input);
+				return undefined;
+			},
+		});
+		const response = await fetch(`${url}/api/setup/key`, {
+			method: 'POST',
+			headers: { 'content-type': 'text/plain' },
+			body: JSON.stringify({ preset: 'deepseek', key: 'sk-x' }),
+		});
+		expect(response.status).toBe(403);
+		expect(saved).toEqual([]);
+	});
+
 	it('says what magpie said, and never the key, when a key is refused', async () => {
 		const { url, fixed } = await serve({
 			title: '还不能聊天',

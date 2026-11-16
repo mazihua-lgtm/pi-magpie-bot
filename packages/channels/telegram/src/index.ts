@@ -120,18 +120,22 @@ export class TelegramChannel implements Channel {
 		const message = update.message;
 		if (!message?.text) return;
 		if (message.from?.is_bot) return;
+		// Owner and allow-list are people, and in a private chat the chat id is the
+		// person's. A group's id stands for everyone in it, so a group is no owner.
+		if (message.chat.type !== 'private') return;
 
 		const chatId = String(message.chat.id);
 		const owners = this.options.owners;
 		if (owners) {
 			const admission = owners.check(this.id, chatId);
 			if (admission === 'denied') {
-				await this.send(chatId, '这台机器人已经有主人了，不能再接受别人指挥。');
+				await this.send(chatId, '这台机器人已经有主人了，不能再接受别人指挥。').catch(() => {});
 				return;
 			}
 			if (admission === 'claimed') {
 				console.log(`[telegram] ${chatId} is now the owner of this bot`);
-				await this.send(chatId, '好，从现在起我归你了。直接跟我说话就行，比如「10 分钟后提醒我关火」。');
+				// The welcome is a courtesy: failing to send it must not lose the message.
+				await this.send(chatId, '好，从现在起我归你了。直接跟我说话就行，比如「10 分钟后提醒我关火」。').catch(() => {});
 			}
 		}
 

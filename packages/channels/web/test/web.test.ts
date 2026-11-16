@@ -157,6 +157,43 @@ describe('web channel', () => {
 		expect(reply.startsWith('HTTP/1.1 400')).toBe(true);
 	});
 
+	it('refuses a post that is not JSON', async () => {
+		const { url, messages } = await start();
+		const response = await fetch(`${url}/api/message`, {
+			method: 'POST',
+			headers: { 'content-type': 'text/plain' },
+			body: JSON.stringify({ text: 'hi' }),
+		});
+		expect(response.status).toBe(415);
+		expect(messages).toHaveLength(0);
+	});
+
+	it('refuses a request that names another host when there is no password and it listens locally', async () => {
+		const { url } = await start();
+		const { port } = new URL(url);
+		const reply = await new Promise<string>((resolve) => {
+			const socket = connect(Number(port), '127.0.0.1', () => {
+				socket.write('GET / HTTP/1.1\r\nHost: evil.example\r\nConnection: close\r\n\r\n');
+			});
+			let data = '';
+			socket.on('data', (chunk) => (data += chunk));
+			socket.on('close', () => resolve(data));
+		});
+		expect(reply.startsWith('HTTP/1.1 421')).toBe(true);
+	});
+
+	it('stops a password guesser after ten misses', async () => {
+		const { url } = await start({ password: 'hunter2' });
+		const guess = () =>
+			fetch(`${url}/api/login`, {
+				method: 'POST',
+				headers: { 'content-type': 'application/json' },
+				body: JSON.stringify({ password: 'nope' }),
+			});
+		for (let i = 0; i < 10; i++) expect((await guess()).status).toBe(401);
+		expect((await guess()).status).toBe(429);
+	});
+
 	it('asks for a password when one is set', async () => {
 		const { url, messages } = await start({ password: 'hunter2' });
 

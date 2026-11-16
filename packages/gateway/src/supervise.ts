@@ -50,6 +50,13 @@ export async function ensureGateway(
 		throw new Error(`${message} (waited ${timeoutMs}ms)`);
 	}
 
+	// A gateway named by an address that is not this machine is somebody else's:
+	// starting a local one would not make that address answer.
+	const address = new URL(config.baseUrl);
+	if (!['localhost', '127.0.0.1', '[::1]'].includes(address.hostname)) {
+		throw new Error(`magpie gateway is not answering at ${config.baseUrl}, and that is not this machine, so it is not started here`);
+	}
+
 	let binary = options.binary ?? findMagpieBinary();
 	if (!binary) {
 		if (!options.installDir) {
@@ -60,11 +67,10 @@ export async function ensureGateway(
 
 	// A magpie of our own listens where the bot was told to look for it, so a
 	// non-default MAGPIE_BASE_URL means something for the one we start too.
-	const address = new URL(config.baseUrl);
 	const child = spawn(binary, ['serve'], {
 		detached: true,
 		stdio: 'ignore',
-		env: { ...process.env, MAGPIE_ADDR: `${address.hostname}:${address.port}` },
+		env: { ...process.env, MAGPIE_ADDR: `${address.hostname}:${address.port || '3425'}` },
 	});
 	child.unref();
 

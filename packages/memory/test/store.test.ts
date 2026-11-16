@@ -18,6 +18,16 @@ describe('memory store', () => {
 		expect(await memory.readNote('c1', 'work-hours')).toContain('09:00');
 	});
 
+	it('does not let a note called index overwrite the index', async () => {
+		const memory = await store();
+		await memory.writeNote('c1', 'work-hours', 'The user works 09:00 to 18:00.');
+		await memory.writeNote('c1', 'index', 'hello');
+
+		const index = await memory.readIndex('c1');
+		expect(index).toContain('work-hours: The user works 09:00 to 18:00.');
+		expect(index).toContain('hello');
+	});
+
 	it('finds a note by what it says', async () => {
 		const memory = await store();
 		await memory.writeNote('c1', 'car', 'The car is a blue BYD, plate ending 88.');

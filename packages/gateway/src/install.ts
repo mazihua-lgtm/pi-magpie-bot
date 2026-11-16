@@ -7,7 +7,7 @@
  */
 import { execFile, spawn } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { chmod, mkdir, writeFile } from 'node:fs/promises';
+import { chmod, mkdir, rename, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
 
@@ -85,8 +85,12 @@ export async function installMagpie(options: InstallMagpieOptions): Promise<stri
 
 	await mkdir(options.dir, { recursive: true });
 	const path = join(options.dir, 'magpie');
-	await writeFile(path, bytes, { mode: 0o755 });
-	await chmod(path, 0o755);
+	// Written whole and moved into place: a download cut off by a crash must not
+	// leave a half binary where the next start looks for a working one.
+	const partial = `${path}.partial`;
+	await writeFile(partial, bytes, { mode: 0o755 });
+	await chmod(partial, 0o755);
+	await rename(partial, path);
 	return path;
 }
 
@@ -135,6 +139,16 @@ async function magpieRun(binary: string, args: string[], timeout: number): Promi
  */
 export async function ensureFreeRoute(options: FreeRouteOptions): Promise<void> {
 	const log = options.log ?? (() => {});
+
+	// `group add` replaces a group of the same name, and `free` is a name people
+	// give their own groups. One that is not ours is the user's, and so is the
+	// whole of that magpie: nothing is added to it.
+	const existing = await groupShow(options.binary, FREE_GROUP);
+	if (existing !== undefined && !existing.includes('our-free-model')) {
+		log(`magpie already has a group named '${FREE_GROUP}' of its own; leaving it and the free pool alone`);
+		return;
+	}
+
 	try {
 		log('adding the free-model plugin');
 		await magpieRun(options.binary, ['plugin', 'add', FREE_PLUGIN], 180_000);
@@ -148,11 +162,25 @@ export async function ensureFreeRoute(options: FreeRouteOptions): Promise<void> 
 			log(`signing in to the free pool did not finish: ${(error as Error).message.split('\n')[0]}`);
 		}
 	}
+	if (existing !== undefined) {
+		log(`routing group '${FREE_GROUP}' is in place`);
+		return;
+	}
 	try {
 		await magpieRun(options.binary, ['group', 'add', FREE_GROUP, 'models=our-free-model/*', 'routing=smart'], 30_000);
 		log(`routing group '${FREE_GROUP}' is in place`);
 	} catch (error) {
 		log(`the free routing group was not created: ${(error as Error).message.split('\n')[0]}`);
+	}
+}
+
+/** What magpie prints for one group, or undefined when there is no such group (it exits 1). */
+async function groupShow(binary: string, id: string): Promise<string | undefined> {
+	try {
+		const { stdout } = await run(binary, ['group', 'show', id], { env: process.env, timeout: 30_000 });
+		return stdout;
+	} catch {
+		return undefined;
 	}
 }
 

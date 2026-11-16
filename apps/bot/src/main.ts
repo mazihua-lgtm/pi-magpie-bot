@@ -290,9 +290,15 @@ if (telegramToken) {
 }
 
 if (!webDisabled) {
+	const webHost = env.WEB_HOST ?? '127.0.0.1';
+	if (!env.WEB_PASSWORD && !['127.0.0.1', 'localhost', '::1'].includes(webHost)) {
+		console.warn(
+			`[bot] ! the web chat listens on ${webHost} with no WEB_PASSWORD: whoever can reach this port can use the assistant. Set WEB_PASSWORD, or keep the port to this machine.`,
+		);
+	}
 	const web = new WebChannel({
 		port: Number(env.WEB_PORT ?? 8787),
-		host: env.WEB_HOST ?? '127.0.0.1',
+		host: webHost,
 		password: env.WEB_PASSWORD,
 		// A reopened tab gets the conversation back instead of an empty page.
 		history: (target) => bot.transcript('web', target),

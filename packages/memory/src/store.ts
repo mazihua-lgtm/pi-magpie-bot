@@ -28,7 +28,9 @@ export class MemoryStore {
 			.replace(/[^a-z0-9\u4e00-\u9fff_-]+/g, '-')
 			.replace(/^-+|-+$/g, '');
 		if (!cleaned) throw new Error('a note needs a name of letters, digits, - or _');
-		return cleaned.slice(0, 80);
+		const slug = cleaned.slice(0, 80);
+		// `index` is the file that lists the notes; a note by that name would replace it.
+		return slug === 'index' ? 'index-note' : slug;
 	}
 
 	private dir(conversationId: ConversationKey): string {

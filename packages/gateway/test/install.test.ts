@@ -88,12 +88,18 @@ describe('the free route', () => {
 	 * stdin the way the real one does, so the sign-in is driven for real; with
 	 * `behindProxy` it fails when handed a proxy, as a blocked download does.
 	 */
-	const fakeMagpie = async (dir: string, options: { signedIn: boolean; behindProxy?: boolean }) => {
+	const fakeMagpie = async (
+		dir: string,
+		options: { signedIn: boolean; behindProxy?: boolean; group?: string },
+	) => {
 		const calls = join(dir, 'calls');
 		const fake = join(dir, 'magpie');
 		await writeFile(
 			fake,
 			`#!/bin/sh
+if [ "$1 $2" = "group show" ]; then
+  ${options.group === undefined ? 'echo "magpie: no group" >&2\n  exit 1' : `echo '${options.group}'\n  exit 0`}
+fi
 echo "$@" >> "${calls}"
 if [ "$1 $2" = "plugin list" ]; then
   echo '{"providers":[{"id":"our-free-model","signedIn":${options.signedIn}}]}'
@@ -121,6 +127,27 @@ fi
 		expect(lines[0]).toBe('plugin add https://github.com/mu-zi-lee/magpie-our-free-model');
 		expect(lines).toContain('answer=1');
 		expect(lines.at(-1)).toBe(`group add ${FREE_GROUP} models=our-free-model/* routing=smart`);
+	});
+
+	it('leaves a group of the user\'s own called free, and everything else, alone', async () => {
+		const dir = await tempDir();
+		const { fake, calls } = await fakeMagpie(dir, { signedIn: false, group: 'free: deepseek/deepseek-chat' });
+		const logged: string[] = [];
+
+		await ensureFreeRoute({ binary: fake, log: (line) => logged.push(line) });
+
+		await expect(readFile(calls, 'utf8')).rejects.toThrow();
+		expect(logged.join('\n')).toContain('of its own');
+	});
+
+	it('keeps its own group when it is already there, without adding it twice', async () => {
+		const dir = await tempDir();
+		const { fake, calls } = await fakeMagpie(dir, { signedIn: true, group: 'free: our-free-model/*' });
+
+		await ensureFreeRoute({ binary: fake });
+
+		const lines = (await readFile(calls, 'utf8')).trim().split('\n');
+		expect(lines.some((line) => line.startsWith('group add'))).toBe(false);
 	});
 
 	it('does not sign in again when the pool already is', async () => {

@@ -99,14 +99,19 @@ describe('bot ingest', () => {
 });
 
 describe('the loop', () => {
-	it('does not start a second tick while one is still running', async () => {
+	it('does not start a second run while one is still going, and still delivers meanwhile', async () => {
 		const { bot } = await openBot(await dataDir());
 		let calls = 0;
 		// A run that takes longer than the interval: exactly the case where two
 		// ticks would claim the same waiting message and answer it twice.
-		bot.tick = async () => {
+		let deliveries = 0;
+		bot.work = async () => {
 			calls += 1;
 			await new Promise((resolve) => setTimeout(resolve, 40));
+		};
+		bot.dispatch = async () => {
+			deliveries += 1;
+			return 0;
 		};
 
 		const stop = bot.start(5);
@@ -114,6 +119,8 @@ describe('the loop', () => {
 		stop();
 
 		expect(calls).toBeLessThanOrEqual(3);
+		// Delivery has its own loop: it keeps going while a run is in progress.
+		expect(deliveries).toBeGreaterThan(calls);
 	});
 });
 

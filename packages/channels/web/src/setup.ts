@@ -170,6 +170,17 @@ export async function serveSetupPage(options: SetupPageOptions): Promise<SetupPa
 			return;
 		}
 		if (path === '/api/setup/key' && request.method === 'POST') {
+			// Whose key goes into this machine's gateway decides who reads the chats it
+			// carries, so a page elsewhere on the web must not be able to post one: it
+			// cannot send this content type without a CORS preflight this server never
+			// grants, and it cannot present a Host that is not this machine's own.
+			const local = /^(localhost|127\.0\.0\.1|\[::1\])(:\d+)?$/.test(request.headers.host ?? '');
+			const loopback = host === 'localhost' || host === '::1' || host.startsWith('127.');
+			if (!(request.headers['content-type'] ?? '').startsWith('application/json') || (loopback && !local)) {
+				response.writeHead(403, { 'content-type': 'application/json; charset=utf-8' });
+				response.end(JSON.stringify({ error: '这个请求不是从这一页发出的。' }));
+				return;
+			}
 			void saveKey(request, response, options).then((accepted) => {
 				if (!accepted) return;
 				// The chat server wants this same port, so the page gives it up.

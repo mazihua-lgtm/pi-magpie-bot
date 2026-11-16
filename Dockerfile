@@ -20,6 +20,10 @@ RUN pnpm install --frozen-lockfile
 # and a production install would leave it out.
 ENV NODE_ENV=production
 
+# Not root: this process talks to strangers on a chat platform.
+RUN mkdir -p /data && chown node:node /data
+USER node
+
 VOLUME /data
 EXPOSE 8787
-CMD ["pnpm", "exec", "tsx", "apps/bot/src/main.ts"]
+CMD ["node_modules/.bin/tsx", "apps/bot/src/main.ts"]

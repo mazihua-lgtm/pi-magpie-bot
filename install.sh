@@ -126,7 +126,21 @@ run_magpie() {
 	env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY "$MAGPIE_BIN" "$@" 2>/dev/null
 }
 
-gateway_up() { curl -fsS --max-time 2 http://127.0.0.1:3425/v1/models >/dev/null 2>&1; }
+# Where magpie listens: the default, or the address this shell was told to use.
+GATEWAY="${MAGPIE_ADDR:-127.0.0.1:3425}"
+gateway_up() { curl -fsS --max-time 2 "http://$GATEWAY/v1/models" >/dev/null 2>&1; }
+
+# `group add` replaces a group of the same name, and `free` is a name people give
+# their own groups. One that is not ours is the user's, and so is that whole
+# magpie: nothing is added to it.
+HAS_FREE=0
+if [ "$MANAGE_MAGPIE" = 1 ] && [ -n "$MAGPIE_BIN" ] && FREE_NOW="$("$MAGPIE_BIN" group show "$FREE_GROUP_ID" 2>/dev/null)"; then
+	HAS_FREE=1
+	if ! printf '%s' "$FREE_NOW" | grep -q our-free-model; then
+		warn "magpie already has a group named '$FREE_GROUP_ID' of its own; leaving magpie as it is"
+		MANAGE_MAGPIE=0
+	fi
+fi
 
 if [ "$MANAGE_MAGPIE" = 1 ] && [ -n "$MAGPIE_BIN" ]; then
 	mkdir -p "$HOME/.local/state/magpie-bot"
@@ -164,11 +178,13 @@ if [ "$MANAGE_MAGPIE" = 1 ] && [ -n "$MAGPIE_BIN" ]; then
 	fi
 
 	if gateway_up; then
-		run_magpie group add "$FREE_GROUP_ID" 'models=our-free-model/*' routing=smart ||
-			warn "could not create the '$FREE_GROUP_ID' routing group"
+		if [ "$HAS_FREE" = 0 ]; then
+			run_magpie group add "$FREE_GROUP_ID" 'models=our-free-model/*' routing=smart ||
+				warn "could not create the '$FREE_GROUP_ID' routing group"
+		fi
 		say "routing group '$FREE_GROUP_ID' ready (model id: group/$FREE_GROUP_ID)"
 	else
-		warn "magpie did not answer on 127.0.0.1:3425; see $LOG"
+		warn "magpie did not answer on $GATEWAY; see $LOG"
 	fi
 fi
 
@@ -181,11 +197,13 @@ if [ -f .env ]; then
 	say ".env already exists, leaving it alone"
 else
 	cp .env.example .env
+	# It will hold a bot token and a password: for this user only.
+	chmod 600 .env
 	if [ "$TELEGRAM" = 1 ]; then
 		printf 'Telegram bot token from @BotFather (leave empty to skip): '
 		read -r TOKEN || TOKEN=""
 		if [ -n "${TOKEN:-}" ]; then
-			printf 'TELEGRAM_BOT_TOKEN=%s\n' "$TOKEN" | cat - .env >.env.tmp && mv .env.tmp .env
+			(umask 077 && printf 'TELEGRAM_BOT_TOKEN=%s\n' "$TOKEN" | cat - .env >.env.tmp) && mv .env.tmp .env
 			say "Telegram token saved to .env"
 		else
 			warn "no token; the web chat still works"

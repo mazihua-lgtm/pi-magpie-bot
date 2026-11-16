@@ -62,6 +62,14 @@ export class Approvals {
 		return undefined;
 	}
 
+	/** Every card still open, closed: after a restart nobody is waiting on any of them. */
+	expirePending(): number {
+		const result = this.host.db
+			.prepare(`UPDATE approvals SET status = 'expired', decided_at = ? WHERE status = 'pending'`)
+			.run(Date.now());
+		return Number(result.changes);
+	}
+
 	decide(id: string, status: 'allowed' | 'denied' | 'expired'): boolean {
 		const result = this.host.db
 			.prepare(`UPDATE approvals SET status = ?, decided_at = ? WHERE id = ? AND status = 'pending'`)

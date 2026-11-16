@@ -136,6 +136,16 @@ describe('approvals', () => {
 		db.close();
 	});
 
+	it('expires cards left open by a process that died', () => {
+		const db = host();
+		const approvals = new Approvals(db);
+		const id = approvals.ask({ conversation: 'c1', channel: 'web', target: 't', action: 'x' });
+		expect(approvals.expirePending()).toBe(1);
+		expect(approvals.pendingFor('c1')).toBeUndefined();
+		expect(approvals.decide(id, 'allowed')).toBe(false);
+		db.close();
+	});
+
 	it('refuses to decide the same card twice', () => {
 		const db = host();
 		const approvals = new Approvals(db);
@@ -160,6 +170,14 @@ describe('owners', () => {
 		const db = host();
 		const owners = new Owners(new Settings(db), ['999']);
 		owners.check('telegram', '111');
+		expect(owners.check('telegram', '999')).toBe('allowed');
+		db.close();
+	});
+
+	it('does not let a stranger claim the bot first when ALLOWED_USERS is set', () => {
+		const db = host();
+		const owners = new Owners(new Settings(db), ['999']);
+		expect(owners.check('telegram', '111')).toBe('denied');
 		expect(owners.check('telegram', '999')).toBe('allowed');
 		db.close();
 	});

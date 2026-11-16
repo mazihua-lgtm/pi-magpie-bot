@@ -50,7 +50,8 @@ services:
       WEB_PASSWORD: ${WEB_PASSWORD:-}
       ALLOWED_USERS: ${ALLOWED_USERS:-}
     ports:
-      - "${WEB_PORT:-8787}:8787"
+      # 只给这台机器。要从别处打开，把 .env 里的 WEB_BIND 改成 0.0.0.0，并且一定设 WEB_PASSWORD
+      - "${WEB_BIND:-127.0.0.1}:${WEB_PORT:-8787}:8787"
     volumes:
       - bot-data:/data
 

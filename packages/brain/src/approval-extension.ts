@@ -7,6 +7,8 @@ function describe(name: string, args: unknown): string {
 	const first = (key: string) => (typeof input[key] === 'string' ? (input[key] as string) : undefined);
 	const path = first('path');
 	switch (name) {
+		case 'read':
+			return `读取文件 ${path ?? '?'}`;
 		case 'bash':
 			return `执行命令：\n${first('command') ?? '(no command)'}`;
 		case 'write':
@@ -19,9 +21,10 @@ function describe(name: string, args: unknown): string {
 }
 
 /**
- * Tools that can change the machine ask first. They are the ones pi-durable
- * ships as `CodingTools`; this wraps them by name, so the extension installs
- * whether or not those tools do.
+ * Tools that touch the machine ask first: the four pi-durable ships as
+ * `CodingTools`, reading included, since a file read goes back out in the chat.
+ * This wraps them by name, so the extension installs whether or not those
+ * tools do.
  */
 export function createApprovalExtension(name: string, options: ApprovalGateOptions): Extension {
 	const wrap = (tool: ToolRegistration): ToolRegistration => ({
@@ -40,7 +43,7 @@ export function createApprovalExtension(name: string, options: ApprovalGateOptio
 
 	return defineExtension({
 		name,
-		wraps: [wrapToolName('bash', wrap), wrapToolName('write', wrap), wrapToolName('edit', wrap)],
+		wraps: [wrapToolName('read', wrap), wrapToolName('bash', wrap), wrapToolName('write', wrap), wrapToolName('edit', wrap)],
 	});
 }
 

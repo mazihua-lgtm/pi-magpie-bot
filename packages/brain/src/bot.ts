@@ -103,8 +103,7 @@ export class Bot {
 	private readonly memory: MemoryStore;
 	private readonly channels = new Map<string, Channel>();
 	private readonly now: () => number;
-	private timer: NodeJS.Timeout | undefined;
-	private ticking = false;
+	private timers: NodeJS.Timeout[] = [];
 	private closed = false;
 
 	private constructor(
@@ -178,6 +177,10 @@ export class Bot {
 	private recover(): void {
 		const inFlight = this.outbox.releaseInFlight();
 		if (inFlight > 0) console.warn(`[bot] ${inFlight} message(s) were mid-send at the crash; not retried`);
+
+		// A card whose run died with the process has nobody waiting on it. Left open
+		// it would swallow the next "好" the user types in an ordinary chat.
+		this.approvals.expirePending();
 
 		const interrupted = this.inbox.reclaim();
 		for (const row of interrupted) {
@@ -273,11 +276,26 @@ export class Bot {
 
 			const batched = this.inbox.pendingFor(first.conversation);
 			const text = [first.text, ...batched.map((row) => row.text)].join('\n');
-			await this.answer(first.conversation, text);
+			try {
+				await this.answer(first.conversation, text);
+			} catch (error) {
+				// A run that threw must still close its rows: left `running` they would
+				// never be answered, never be retried, and never be mentioned until the
+				// next restart.
+				console.error('[bot] run failed:', error);
+				this.tell(first.conversation, text, '这条消息处理时出了错，我没能回上来。可以再说一次。', 'Something broke while I was answering that one. Could you send it again?');
+			}
 			for (const row of [first, ...batched]) this.inbox.finish(row.id);
 			handled += 1 + batched.length;
 		}
 		return handled;
+	}
+
+	/** A line from the bot itself, in the language of what it answers. */
+	private tell(conversationId: string, sample: string, zh: string, en: string): void {
+		const target = this.targets.get(conversationId);
+		if (!target) return;
+		this.outbox.enqueue({ conversation: conversationId, channel: target.channel, target: target.target, text: bilingual(sample, zh, en) });
 	}
 
 	/** One run: the durable conversation does the work, the outbox carries it out. */
@@ -379,33 +397,47 @@ export class Bot {
 		return sent;
 	}
 
-	/** One pass of the whole loop: timers, work, delivery. */
-	async tick(): Promise<void> {
+	/** What the agent does: timers become events, events become answers. */
+	async work(): Promise<void> {
 		this.fireDueSchedules();
 		await this.pump();
+	}
+
+	/** One pass of the whole loop: timers, work, delivery. */
+	async tick(): Promise<void> {
+		await this.work();
 		await this.dispatch();
 	}
 
-	/** Run the loop in the background until the returned function is called. */
+	/**
+	 * Run the loop in the background until the returned function is called.
+	 *
+	 * Working and delivering are two loops, not one. A run can be waiting on the
+	 * user (an approval card) or can have said something on its own (`send_message`)
+	 * while it is still running: both go through the outbox, and delivery that
+	 * waited for the run to end would show the card only after it had timed out.
+	 */
 	start(intervalMs = 2_000): () => void {
-		const stop = async () => {
-			if (this.timer) clearInterval(this.timer);
-			this.timer = undefined;
-			await this.close();
+		const every = (label: string, job: () => Promise<unknown>) => {
+			// One worker per loop. A run can take longer than the interval, and two
+			// at once would claim the same waiting messages and answer them twice —
+			// the one thing this design promises not to do.
+			let busy = false;
+			this.timers.push(
+				setInterval(() => {
+					if (busy) return;
+					busy = true;
+					void job()
+						.catch((error) => console.error(`[bot] ${label} failed`, error))
+						.finally(() => {
+							busy = false;
+						});
+				}, intervalMs),
+			);
 		};
-		this.timer = setInterval(() => {
-			// One worker at a time. A run can take longer than the interval, and
-			// two ticks at once would claim the same waiting messages and answer
-			// them twice — the one thing this design promises not to do.
-			if (this.ticking) return;
-			this.ticking = true;
-			void this.tick()
-				.catch((error) => console.error('[bot] tick failed', error))
-				.finally(() => {
-					this.ticking = false;
-				});
-		}, intervalMs);
-		return () => void stop();
+		every('work', () => this.work());
+		every('delivery', () => this.dispatch());
+		return () => void this.close();
 	}
 
 	/** For tests and for the web UI: what is waiting right now. */
@@ -420,8 +452,7 @@ export class Bot {
 	async close(): Promise<void> {
 		if (this.closed) return;
 		this.closed = true;
-		if (this.timer) clearInterval(this.timer);
-		this.timer = undefined;
+		for (const timer of this.timers.splice(0)) clearInterval(timer);
 		await this.harness.close(BACKGROUND_CONTEXT);
 		this.host.close();
 	}

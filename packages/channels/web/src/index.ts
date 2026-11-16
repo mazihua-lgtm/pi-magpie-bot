@@ -37,6 +37,17 @@ function cookies(request: IncomingMessage): Record<string, string> {
 	return out;
 }
 
+/** Whether a Host header names this machine itself. */
+function isLocalHost(header: string | undefined): boolean {
+	if (!header) return false;
+	const name = header.startsWith('[') ? header.slice(0, header.indexOf(']') + 1) : header.split(':')[0];
+	return name === 'localhost' || name === '127.0.0.1' || name === '[::1]';
+}
+
+function isLoopback(host: string): boolean {
+	return host === 'localhost' || host === '::1' || host.startsWith('127.');
+}
+
 function json(response: ServerResponse, status: number, body: unknown): void {
 	const payload = JSON.stringify(body);
 	response.writeHead(status, { 'content-type': 'application/json; charset=utf-8' });
@@ -73,6 +84,8 @@ export class WebChannel implements Channel {
 	readonly id = 'web';
 	private readonly sessions = new Map<string, Session>();
 	private readonly secret = randomBytes(32);
+	/** Wrong passwords by remote address: a password is only a password if it cannot be guessed at speed. */
+	private readonly misses = new Map<string, { count: number; until: number }>();
 	private server: ReturnType<typeof createServer> | undefined;
 	private bound = { port: 0, url: '' };
 
@@ -165,6 +178,17 @@ export class WebChannel implements Channel {
 		}
 		const cookie = cookies(request);
 
+		// A page open on the internet can aim at 127.0.0.1 too, either by rebinding
+		// its own name to it or by posting from the user's browser. With no password
+		// there is nothing else to stop it, so the page answers only to this
+		// machine's own names, and only to bodies a foreign page cannot send.
+		if (!this.options.password && isLoopback(this.options.host ?? '127.0.0.1') && !isLocalHost(request.headers.host)) {
+			return json(response, 421, { error: 'this page answers only on localhost' });
+		}
+		if (request.method === 'POST' && !(request.headers['content-type'] ?? '').startsWith('application/json')) {
+			return json(response, 415, { error: 'send application/json' });
+		}
+
 		if (url.pathname === '/healthz') return json(response, 200, { ok: true });
 
 		const session = this.session(request, response);
@@ -175,8 +199,17 @@ export class WebChannel implements Channel {
 		}
 
 		if (url.pathname === '/api/login' && request.method === 'POST') {
+			const who = request.socket.remoteAddress ?? '?';
+			const miss = this.misses.get(who);
+			if (miss && miss.count >= 10 && Date.now() < miss.until) return json(response, 429, { error: 'too many tries, wait a few minutes' });
 			const body = await readJson(request);
-			if (!this.passwordMatches(body.password)) return json(response, 401, { error: 'wrong password' });
+			if (!this.passwordMatches(body.password)) {
+				const fresh = miss && Date.now() < miss.until ? miss : { count: 0, until: Date.now() + 10 * 60_000 };
+				fresh.count += 1;
+				this.misses.set(who, fresh);
+				return json(response, 401, { error: 'wrong password' });
+			}
+			this.misses.delete(who);
 			response.setHeader(
 				'set-cookie',
 				`auth=${this.token(session)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=31536000`,
@@ -216,6 +249,13 @@ export class WebChannel implements Channel {
 		});
 		response.write(': connected\n\n');
 		state.subscribers.add(response);
+		const keepAlive = setInterval(() => response.write(': keep-alive\n\n'), 20_000);
+		// Before anything is awaited: a tab that closes while the history loads
+		// must still be forgotten.
+		response.on('close', () => {
+			clearInterval(keepAlive);
+			state.subscribers.delete(response);
+		});
 
 		if (this.options.history) {
 			// The transcript already holds what the buffer holds, and more: show it
@@ -238,12 +278,6 @@ export class WebChannel implements Channel {
 				response.write(`data: ${JSON.stringify({ text })}\n\n`);
 			}
 		}
-
-		const keepAlive = setInterval(() => response.write(': keep-alive\n\n'), 20_000);
-		response.on('close', () => {
-			clearInterval(keepAlive);
-			state.subscribers.delete(response);
-		});
 	}
 
 	/** The outbox hands the answer here; a closed tab keeps it until the next one opens. */
@@ -251,6 +285,8 @@ export class WebChannel implements Channel {
 		const state = this.state(target);
 		if (state.subscribers.size === 0) {
 			state.buffer.push(text);
+			// A tab that never comes back must not make this grow without end.
+			if (state.buffer.length > 100) state.buffer.shift();
 			return;
 		}
 		for (const response of state.subscribers) {
