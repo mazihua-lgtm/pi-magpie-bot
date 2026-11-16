@@ -5,7 +5,7 @@
 ## 一张图
 
 ```
-Telegram / 网页 ──▶ inbox ──▶ pi-durable 会话 ──▶ outbox ──▶ 你
+Telegram / 飞书 / 网页 ──▶ inbox ──▶ pi-durable 会话 ──▶ outbox ──▶ 你
                      ▲              │
                      └── schedules ─┘      （定时任务到点写成一条 inbox 事件）
 ```

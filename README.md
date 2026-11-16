@@ -62,6 +62,16 @@ magpie plugin login our-free-model
 
 **第一个跟它说话的账号会成为主人**，其他人发消息会被拒绝。想多几个人用，把他们的 id 加到 `.env` 的 `ALLOWED_USERS`（逗号分隔）。
 
+### 接到飞书
+
+不需要公网地址（用官方长连接）。
+
+1. 在 open.feishu.cn 建一个**企业自建应用**，开启「机器人」能力，加上权限「获取用户发给机器人的单聊消息」（`im:message.p2p_msg:readonly`）和「以应用身份发消息」（`im:message:send_as_bot`）。
+2. 事件订阅选「**使用长连接接收事件**」，添加事件 `im.message.receive_v1`，然后发布版本。
+3. 把应用的 App ID 和 App Secret 填到 `.env` 的 `FEISHU_APP_ID`、`FEISHU_APP_SECRET`（国际版 Lark 再把 `FEISHU_DOMAIN` 改成 `lark`），`pnpm start`，看到 `[feishu] connected` 就是通了，在飞书里给机器人发单聊消息。
+
+只回单聊，群聊忽略；和 Telegram 一样，第一个跟它说话的人成为主人。目前只看得懂文字消息。
+
 ## 进阶：用你自己的模型 / Bring your own model
 
 免费池的代价是排队和限制。想稳定、想用大模型，两条路：
@@ -118,6 +128,7 @@ magpie 容器是「别人家的网关」，第一次起会要一把自己的 key
 | 读写文件 / 执行命令 | 在 `.env` 设 `WORKSPACE_DIR` | 每次执行前发审批卡，回「是」才动 |
 | 网页 | `pnpm start` | 内置 HTTP 服务，无外部依赖 |
 | Telegram | `.env` 填 token | 长轮询，不需要公网 IP |
+| 飞书 / Lark | `.env` 填 App ID 和 Secret | 官方长连接，不需要公网 IP |
 
 ## 配置 / Configuration
 
@@ -134,6 +145,8 @@ magpie 容器是「别人家的网关」，第一次起会要一把自己的 key
 | `WEB_PASSWORD` | 空 | 设了就要密码才能进网页 |
 | `WEB_BIND` | `127.0.0.1` | 仅 compose：网页端口发布到哪个地址 |
 | `TELEGRAM_BOT_TOKEN` | 空 | 填了就接 Telegram |
+| `FEISHU_APP_ID` / `FEISHU_APP_SECRET` | 空 | 两个都填了就接飞书 |
+| `FEISHU_DOMAIN` | `feishu` | 国际版 Lark 填 `lark` |
 | `WORKSPACE_DIR` | 空 | 设了才允许读写文件、执行命令（每次要审批） |
 | `ALLOWED_USERS` | 空 | 除主人外还允许谁说话 |
 

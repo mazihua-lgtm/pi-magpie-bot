@@ -9,6 +9,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { Bot } from '@pi-magpie-bot/brain';
+import { FeishuChannel } from '@pi-magpie-bot/channel-feishu';
 import { TelegramChannel } from '@pi-magpie-bot/channel-telegram';
 import { serveSetupPage, type SetupPageOptions, WebChannel } from '@pi-magpie-bot/channel-web';
 import {
@@ -289,6 +290,27 @@ if (telegramToken) {
 	console.log('[bot] no TELEGRAM_BOT_TOKEN, so telegram is off');
 }
 
+const feishuId = env.FEISHU_APP_ID?.trim();
+const feishuSecret = env.FEISHU_APP_SECRET?.trim();
+if (feishuId && feishuSecret) {
+	const feishu = new FeishuChannel({
+		appId: feishuId,
+		appSecret: feishuSecret,
+		domain: env.FEISHU_DOMAIN === 'lark' ? 'lark' : 'feishu',
+		owners,
+		onMessage: (event) => {
+			bot.ingest(event);
+		},
+	});
+	bot.register(feishu);
+	// Whether it really connected is said by the channel itself ("[feishu] connected").
+	feishu.start().catch((error: unknown) => console.error('[bot] feishu failed to start:', error instanceof Error ? error.message : error));
+	console.log('[bot] feishu is starting');
+	shutdown.push(() => feishu.stop());
+} else if (feishuId || feishuSecret) {
+	console.warn('[bot] feishu needs both FEISHU_APP_ID and FEISHU_APP_SECRET, so it is off');
+}
+
 if (!webDisabled) {
 	const webHost = env.WEB_HOST ?? '127.0.0.1';
 	if (!env.WEB_PASSWORD && !['127.0.0.1', 'localhost', '::1'].includes(webHost)) {
@@ -313,7 +335,7 @@ if (!webDisabled) {
 }
 
 if (shutdown.length === 0) {
-	console.error('[bot] nothing to talk to: set TELEGRAM_BOT_TOKEN or leave WEB_PORT on');
+	console.error('[bot] nothing to talk to: set TELEGRAM_BOT_TOKEN, FEISHU_APP_ID and FEISHU_APP_SECRET, or leave WEB_PORT on');
 	await bot.close();
 	process.exit(1);
 }

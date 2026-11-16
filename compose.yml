@@ -47,6 +47,9 @@ services:
       # magpie 是另一个容器，bot 只连它，不自己再起一个
       MAGPIE_START: "0"
       TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
+      FEISHU_APP_ID: ${FEISHU_APP_ID:-}
+      FEISHU_APP_SECRET: ${FEISHU_APP_SECRET:-}
+      FEISHU_DOMAIN: ${FEISHU_DOMAIN:-feishu}
       WEB_PASSWORD: ${WEB_PASSWORD:-}
       ALLOWED_USERS: ${ALLOWED_USERS:-}
     ports:

@@ -83,6 +83,22 @@ own model.
 **The first account that talks to it becomes the owner**; anyone else is refused. To let more
 people in, add their ids to `ALLOWED_USERS` in `.env`, comma separated.
 
+### Feishu / Lark
+
+No public address needed (it uses the official long connection).
+
+1. At open.feishu.cn create a **custom enterprise app**, turn on the Bot capability, and grant
+   the permissions to read private messages sent to the bot (`im:message.p2p_msg:readonly`) and
+   to send messages as the app (`im:message:send_as_bot`).
+2. Under event subscription choose **receive events through a long connection**, add the event
+   `im.message.receive_v1`, and publish a version.
+3. Put the app's App ID and App Secret in `.env` as `FEISHU_APP_ID` and `FEISHU_APP_SECRET` (for
+   international Lark also set `FEISHU_DOMAIN=lark`), run `pnpm start`, wait for
+   `[feishu] connected`, then message the bot in a private chat.
+
+Private chats only; groups are ignored. As with Telegram, the first person to talk to it becomes the
+owner. Text messages only for now.
+
 ## Bring your own model
 
 The free pool queues and has limits. For something steady, or a bigger model, there are two ways:
@@ -155,6 +171,7 @@ Only the web port is exposed; magpie stays on the internal network. It is publis
 | Read files / run commands | set `WORKSPACE_DIR` in `.env` | an approval card in the chat every time; "yes" runs it |
 | Web | `pnpm start` | a built-in HTTP server, no external dependency |
 | Telegram | a token in `.env` | long polling, no public IP needed |
+| Feishu / Lark | App ID and Secret in `.env` | the official long connection, no public IP needed |
 
 ## Configuration
 
@@ -171,6 +188,8 @@ Only the web port is exposed; magpie stays on the internal network. It is publis
 | `WEB_PASSWORD` | empty | set it and the page asks for it |
 | `WEB_BIND` | `127.0.0.1` | compose only: the address the web port is published on |
 | `TELEGRAM_BOT_TOKEN` | empty | set it and Telegram is connected |
+| `FEISHU_APP_ID` / `FEISHU_APP_SECRET` | empty | set both and Feishu is connected |
+| `FEISHU_DOMAIN` | `feishu` | `lark` for international Lark |
 | `WORKSPACE_DIR` | empty | only with it can the bot read files and run commands (each one approved) |
 | `ALLOWED_USERS` | empty | who else may talk to it, besides the owner |
 

@@ -27,6 +27,13 @@ notices are carried by their own distributions.
 - Used for: the optional free-model pool. Installed as a magpie plugin by the
   user, never vendored into this repository.
 
+## @larksuiteoapi/node-sdk
+
+- Source: https://github.com/larksuite/node-sdk
+- License: MIT
+- Used for: the Feishu / Lark channel (long-connection events and sending
+  messages). Installed from npm, not vendored.
+
 ## Design references (no code taken)
 
 - https://github.com/NousResearch/hermes-agent (MIT)
