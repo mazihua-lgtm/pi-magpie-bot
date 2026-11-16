@@ -1,6 +1,6 @@
 {
 	"name": "pi-magpie-bot",
-	"version": "0.0.1",
+	"version": "0.1.0",
 	"private": true,
 	"description": "An always-on personal assistant with memory and reminders: free models out of the box, your data on your own machine.",
 	"repository": {
