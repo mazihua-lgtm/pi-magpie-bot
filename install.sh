@@ -18,6 +18,34 @@ say() { printf '\033[1m→\033[0m %s\n' "$*"; }
 warn() { printf '\033[33m!\033[0m %s\n' "$*"; }
 die() { printf '\033[31m✗\033[0m %s\n' "$*" >&2; exit 1; }
 
+# A download that gives up on a dead connection instead of hanging on it: three
+# tries, each resuming where the last one stopped, and a connection under 10 KB/s
+# for 30 seconds counts as dead.
+fetch() {
+	local url="$1" out="$2" try=1 rc
+	while :; do
+		rc=0
+		curl -fSL --connect-timeout 15 --speed-time 30 --speed-limit 10240 -C - "$url" -o "$out" || rc=$?
+		[ "$rc" -eq 0 ] && return 0
+		# 33: the server says there is nothing left to send, which means the file
+		# is already whole — the checksum decides whether that is true.
+		[ "$rc" -eq 33 ] && return 0
+		[ "$try" -ge 3 ] && return 1
+		try=$((try + 1))
+		warn "download stalled; retrying ($try/3)"
+		sleep 2
+	done
+}
+
+# Coreutils says sha256sum, macOS says shasum; either one checking the line is fine.
+checksum_ok() {
+	if command -v sha256sum >/dev/null 2>&1; then
+		sha256sum -c -
+	else
+		shasum -a 256 -c -
+	fi
+}
+
 TELEGRAM=0
 MANAGE_MAGPIE=1
 for arg in "$@"; do
@@ -67,9 +95,9 @@ if [ "$MANAGE_MAGPIE" = 1 ] && [ -z "$MAGPIE_BIN" ] && [ ! -x "$HOME/.local/bin/
 	say "downloading magpie ($FILE)"
 	mkdir -p "$HOME/.local/bin"
 	TMP="$(mktemp -d)"
-	curl -fsSL "$URL" -o "$TMP/$FILE" || die "could not download magpie from $URL"
-	if curl -fsSL "$SUMS" -o "$TMP/SHA256SUMS" 2>/dev/null; then
-		if (cd "$TMP" && grep " $FILE\$" SHA256SUMS | shasum -a 256 -c - >/dev/null 2>&1); then
+	fetch "$URL" "$TMP/$FILE" || die "could not download magpie from $URL"
+	if curl -fsSL --connect-timeout 15 --max-time 120 "$SUMS" -o "$TMP/SHA256SUMS" 2>/dev/null; then
+		if (cd "$TMP" && grep " $FILE\$" SHA256SUMS | checksum_ok >/dev/null 2>&1); then
 			say "checksum ok"
 		else
 			die "checksum mismatch for $FILE; not installing it"
