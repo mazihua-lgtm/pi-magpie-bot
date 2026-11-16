@@ -1,51 +1,23 @@
-# 云端模式 / cloud mode:
+# 云端 / 服务器一键起来 / one container, everything inside:
 #
-#   cp .env.example .env        # 填 TELEGRAM_BOT_TOKEN 和 WEB_PASSWORD
-#   docker compose up -d        # 在仓库根目录跑；.env 就在这个文件旁边
+#   cp .env.example .env     # 至少填 WEB_PASSWORD；要接 Telegram 等再填对应几行
+#   docker compose up -d
 #
-# magpie 只在内部网络里，不对外开端口；对外只有网页聊天。
+# 打开 http://<服务器地址>:8787 ，输入 WEB_PASSWORD 进去聊天。
+# 容器里的 bot 自己带着 magpie（第一次启动会下载，要几分钟），所以没有
+# 网关密钥、没有 exec 命令要敲；没有模型时网页上有个框，贴上自己的 key 就行。
 #
-# 容器里的 magpie 要自己的 key（本机跑的时候不用）：
-#   docker compose exec magpie /magpie gateway-key add bot
-# 把打印出来的 sk-magpie-key-… 写进 .env 的 MAGPIE_API_KEY，再 up -d 一次。
-#
-# 新起来的 magpie 里还没有免费路线，开一次：
-#   docker compose exec magpie \
-#     /magpie plugin add https://github.com/mu-zi-lee/magpie-our-free-model
-#   docker compose exec -it magpie /magpie plugin login our-free-model   # 菜单选 1
-#   docker compose exec magpie \
-#     /magpie group add free 'models=our-free-model/*' routing=smart
-# 然后 docker compose restart bot
+# magpie 单独一个容器的老办法在 compose.split.yml。
 services:
-  magpie:
-    image: ghcr.io/yetone/magpie:latest
-    restart: unless-stopped
-    volumes:
-      - magpie-config:/config
-    # 镜像里没有 shell，只有 magpie 自己；它就是现成的探针
-    healthcheck:
-      test: ["CMD", "/magpie", "healthcheck", "--addr", "127.0.0.1:3425"]
-      interval: 5s
-      timeout: 5s
-      retries: 12
-      start_period: 5s
-
   bot:
     build:
       context: .
       dockerfile: Dockerfile
     restart: unless-stopped
-    depends_on:
-      magpie:
-        condition: service_healthy
     environment:
-      MAGPIE_BASE_URL: http://magpie:3425
-      MAGPIE_API_KEY: ${MAGPIE_API_KEY:-}
       MAGPIE_MODEL: ${MAGPIE_MODEL:-group/free}
       # 容器默认是 UTC；提醒和时间都按这个算
       TZ: ${TZ:-Asia/Shanghai}
-      # magpie 是另一个容器，bot 只连它，不自己再起一个
-      MAGPIE_START: "0"
       TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
       FEISHU_APP_ID: ${FEISHU_APP_ID:-}
       FEISHU_APP_SECRET: ${FEISHU_APP_SECRET:-}
@@ -58,8 +30,8 @@ services:
       # 只给这台机器。要从别处打开，把 .env 里的 WEB_BIND 改成 0.0.0.0，并且一定设 WEB_PASSWORD
       - "${WEB_BIND:-127.0.0.1}:${WEB_PORT:-8787}:8787"
     volumes:
-      - bot-data:/data
+      # 对话、记忆、定时任务，以及 magpie 的 key 和路由，都在这一个卷里
+      - data:/data
 
 volumes:
-  magpie-config:
-  bot-data:
+  data:

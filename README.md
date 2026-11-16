@@ -133,32 +133,22 @@ magpie provider add ollama url=http://127.0.0.1:11434/v1 models=qwen3:8b
 
 ## 云端 / Cloud
 
+一个容器，什么都在里面：
+
 ```sh
-cp .env.example .env        # 填 TELEGRAM_BOT_TOKEN 和 WEB_PASSWORD（公网一定要填）
+cp .env.example .env        # 至少填 WEB_PASSWORD；要接 Telegram 等再填对应几行
 docker compose up -d        # 在仓库根目录跑，.env 就在旁边
 ```
 
-云端这条路上 bot 不启动 magpie（`MAGPIE_START=0`），所以免费池得自己在容器里弄一次：
+打开 `http://<服务器地址>:8787`，输入 `WEB_PASSWORD` 就能聊天。容器里的 bot 自己带着 magpie（第一次启动要下载，要几分钟），没有网关密钥、没有 `exec` 命令要敲。对话、记忆、定时任务和 magpie 的 key 都在一个数据卷里，重建容器不丢。
 
-```sh
-docker compose exec magpie \
-  /magpie plugin add https://github.com/mu-zi-lee/magpie-our-free-model
-docker compose exec -it magpie \
-  /magpie plugin login our-free-model          # 菜单选 1，登录完按 Ctrl-D 退出
-docker compose exec magpie \
-  /magpie group add free 'models=our-free-model/*' routing=smart
-docker compose restart bot
-```
+没有可用模型时 bot 不会反复重启：网页上有一页说明，还带一个框，贴上自己的 key（页面给了各家的注册链接）就行。云端这个框**必须**先输 `WEB_PASSWORD` 才能保存，没设密码就不显示，避免被人顺手改了你的 key。
 
-`-it` 不能省：它要一个终端才弹菜单。插件第一次会下载自己的 Node 运行时，容器得能出网到 `nodejs.org`，下不来会报「自动安装 Node 失败」——那就走下面的自带 key。
+默认只发布到本机（`WEB_BIND=127.0.0.1`）；要让手机或别的设备访问，把 `WEB_BIND` 改成 `0.0.0.0`，并且一定设上 `WEB_PASSWORD`。
 
-magpie 容器是「别人家的网关」，第一次起会要一把自己的 key（本机跑的时候不用）：`docker compose exec magpie /magpie gateway-key add bot`，把打印出来的 `sk-magpie-key-…` 填进 `.env` 的 `MAGPIE_API_KEY`，再 `docker compose up -d`。少这一步，bot 那一页会一直写着「不接受这个网关密钥」。
+想把 magpie 单独放一个容器（比如多个 bot 共用一个网关），用 `docker compose -f compose.split.yml up -d`，步骤写在那个文件的开头。
 
-模型还没弄好时 bot 不会反复重启：打开网页端口会看到一页说明，写着差哪一步、该敲什么。容器里的 bot 只跟网关容器说 HTTP、自己手里没有 magpie，所以这一页在云端只给命令；本机跑的时候这一页还会带一个 key 输入框（见上面「用你自己的模型」）。
-
-只有网页端口对外，magpie 在内部网络里。默认只发布到本机（`WEB_BIND=127.0.0.1`）；要让手机或别的设备访问，把 `WEB_BIND` 改成 `0.0.0.0`，并且一定设上 `WEB_PASSWORD`。
-
-> 说明：免费池按出口 IP 限量。云服务器上大概率拿不到免费模型，云端模式请自带 key 或接本地模型。
+> 说明：免费池按出口 IP 限量，云服务器上大概率拿不到免费模型，云端请自带 key 或接本地模型。容器里下载 magpie 要能访问 github.com，下不来时日志会直说，并退回上面那一页。
 
 ## 它能做什么 / What it does
 

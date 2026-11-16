@@ -103,11 +103,14 @@ async function needsSetup(options: SetupPageOptions & { console?: string[] }): P
 	const { console: lines = [], ...page } = options;
 	for (const line of lines) console.error(`[bot] ${line}`);
 	if (env.WEB_PORT === '0') process.exit(1);
+	const webHost = env.WEB_HOST ?? '127.0.0.1';
+	// A page other machines can open takes a key only behind the password.
+	const loopbackHost = ['127.0.0.1', 'localhost', '::1'].includes(webHost);
 	const { url, fixed } = await serveSetupPage({
 		...page,
 		presets: VENDORS,
-		...(canSaveKey() ? { onKey: saveKey } : {}),
-		host: env.WEB_HOST ?? '127.0.0.1',
+		...(canSaveKey() && (loopbackHost || env.WEB_PASSWORD) ? { onKey: saveKey, password: env.WEB_PASSWORD || undefined } : {}),
+		host: webHost,
 		port: Number(env.WEB_PORT ?? 8787),
 	});
 	console.error(`[bot] a page saying this is at ${url}`);
@@ -238,8 +241,23 @@ async function startupModels(): Promise<Look> {
 // The page can fix this without a restart, so it is allowed to answer more than
 // once; three tries is enough for a key that turns out not to work.
 let reachable: Look = 'retry';
-for (let attempt = 0; attempt < 3 && reachable === 'retry'; attempt += 1) {
-	reachable = await startupModels();
+try {
+	for (let attempt = 0; attempt < 3 && reachable === 'retry'; attempt += 1) {
+		reachable = await startupModels();
+	}
+} catch (error) {
+	// No network to fetch magpie, or a gateway that never came up: say so in a
+	// line instead of a stack trace. A service manager (or Docker's restart
+	// policy) starts this again, which is the right answer to a network that
+	// was away for a minute.
+	const reason = (error instanceof Error ? error.message : String(error)).split('\n')[0];
+	console.error(`[bot] the model gateway is not ready: ${reason}`);
+	console.error(
+		env.MAGPIE_START === '0'
+			? '[bot] check that the gateway is running and MAGPIE_BASE_URL points at it; stopping so it can be started again'
+			: '[bot] check that this machine can reach github.com; stopping so it can be started again',
+	);
+	process.exit(1);
 }
 if (reachable === 'retry') {
 	console.error('[bot] no model even after a key was saved; stopping');

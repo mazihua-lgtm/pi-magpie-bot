@@ -181,4 +181,50 @@ describe('the key box', () => {
 		expect((await post({ preset: 'nope', key: 'sk-1' })).status).toBe(400);
 		expect((await post({ preset: 'deepseek', key: '   ' })).status).toBe(400);
 	});
+
+	it('asks for the password when one is set, and saves nothing without it', async () => {
+		const saved: string[] = [];
+		const { url } = await serve({
+			title: 't',
+			reason: 'r',
+			steps: [],
+			presets: VENDORS,
+			password: 'open-sesame',
+			onKey: async (input) => {
+				saved.push(input.key);
+				return undefined;
+			},
+		});
+		expect(await (await fetch(url)).text()).toContain('name="password"');
+		const post = (password?: string) =>
+			fetch(`${url}/api/setup/key`, {
+				method: 'POST',
+				headers: { 'content-type': 'application/json' },
+				body: JSON.stringify({ preset: 'deepseek', key: 'sk-x', password }),
+			});
+		expect((await post()).status).toBe(401);
+		expect((await post('nope')).status).toBe(401);
+		expect(saved).toEqual([]);
+		expect((await post('open-sesame')).status).toBe(200);
+		expect(saved).toEqual(['sk-x']);
+	});
+
+	it('stops answering a password guessed wrong five times in a minute', async () => {
+		const { url } = await serve({
+			title: 't',
+			reason: 'r',
+			steps: [],
+			presets: VENDORS,
+			password: 'right',
+			onKey: async () => undefined,
+		});
+		const post = (password: string) =>
+			fetch(`${url}/api/setup/key`, {
+				method: 'POST',
+				headers: { 'content-type': 'application/json' },
+				body: JSON.stringify({ preset: 'deepseek', key: 'sk-x', password }),
+			});
+		for (let i = 0; i < 5; i += 1) expect((await post(`guess${i}`)).status).toBe(401);
+		expect((await post('right')).status).toBe(429);
+	});
 });

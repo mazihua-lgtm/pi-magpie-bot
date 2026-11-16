@@ -5,6 +5,7 @@
  * who started this from a Docker Compose file gets a container that restarts
  * forever with the answer buried in `docker compose logs`.
  */
+import { createHash, timingSafeEqual } from 'node:crypto';
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 
 export interface SetupPageOptions {
@@ -31,6 +32,13 @@ export interface SetupPageOptions {
 		/** True when that link earns the project something: the page says so. */
 		sponsored?: boolean;
 	}>;
+	/**
+	 * The page may be reachable from other machines (a cloud deploy). Whoever
+	 * saves a key here decides whose account the chats are sent through, so with
+	 * a password set the page asks for it, and without one the caller should
+	 * not offer the key box at all.
+	 */
+	password?: string;
 	/** Saves a key, or throws with the reason it could not be saved. */
 	onKey?: (input: { preset: string; key: string }) => Promise<string | undefined>;
 }
@@ -39,6 +47,7 @@ export interface SetupPageOptions {
 export interface KeyForm {
 	preset: string;
 	key: string;
+	password?: string;
 }
 
 /** Everything a model or a user typed goes through this before it is markup. */
@@ -124,6 +133,7 @@ function keyForm(options: SetupPageOptions): string {
       <select name="preset">${choices}</select>
     </label>
     <p id="signup" class="signup"></p>
+    ${options.password ? '<label>访问密码（部署时设的 WEB_PASSWORD）<input name="password" type="password" autocomplete="current-password" required></label>' : ''}
     <label>API key
       <input name="key" type="password" autocomplete="off" spellcheck="false" required>
     </label>
@@ -158,7 +168,7 @@ function keyForm(options: SetupPageOptions): string {
         const response = await fetch('/api/setup/key', {
           method: 'POST',
           headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ preset: form.preset.value, key: form.key.value }),
+          body: JSON.stringify({ preset: form.preset.value, key: form.key.value, password: form.password ? form.password.value : undefined }),
         });
         const body = await response.json().catch(() => ({}));
         if (!response.ok) {
@@ -194,6 +204,8 @@ export async function serveSetupPage(options: SetupPageOptions): Promise<SetupPa
 	const host = options.host ?? '127.0.0.1';
 	const port = options.port ?? 8787;
 	const page = setupPage(options);
+	/** When the last wrong passwords were typed; a password has to be slow to guess. */
+	const wrong: number[] = [];
 	let settle: (value: boolean) => void = () => {};
 	const fixed = new Promise<boolean>((resolve) => {
 		settle = resolve;
@@ -218,7 +230,7 @@ export async function serveSetupPage(options: SetupPageOptions): Promise<SetupPa
 				response.end(JSON.stringify({ error: '这个请求不是从这一页发出的。' }));
 				return;
 			}
-			void saveKey(request, response, options).then((accepted) => {
+			void saveKey(request, response, options, wrong).then((accepted) => {
 				if (!accepted) return;
 				// The chat server wants this same port, so the page gives it up.
 				// The promise resolves only once the port is really free again:
@@ -244,11 +256,18 @@ export async function serveSetupPage(options: SetupPageOptions): Promise<SetupPa
 	};
 }
 
+function sameSecret(given: string, expected: string): boolean {
+	const a = createHash('sha256').update(given).digest();
+	const b = createHash('sha256').update(expected).digest();
+	return timingSafeEqual(a, b);
+}
+
 /** Reads one key off the page and hands it over. Nothing here says the key back. */
 async function saveKey(
 	request: IncomingMessage,
 	response: ServerResponse,
 	options: SetupPageOptions,
+	wrong: number[],
 ): Promise<boolean> {
 	const say = (status: number, body: Record<string, unknown>): boolean => {
 		response.writeHead(status, { 'content-type': 'application/json; charset=utf-8' });
@@ -262,6 +281,15 @@ async function saveKey(
 		form = JSON.parse(await readBody(request)) as Partial<KeyForm>;
 	} catch {
 		return say(400, { error: '请求看不懂，刷新一下再试。' });
+	}
+	if (options.password) {
+		const now = Date.now();
+		wrong.splice(0, wrong.length, ...wrong.filter((at) => now - at < 60_000));
+		if (wrong.length >= 5) return say(429, { error: '密码试错太多次，一分钟后再试。' });
+		if (!sameSecret(typeof form.password === 'string' ? form.password : '', options.password)) {
+			wrong.push(now);
+			return say(401, { error: '访问密码不对。' });
+		}
 	}
 	const preset = typeof form.preset === 'string' ? form.preset : '';
 	const key = typeof form.key === 'string' ? form.key.trim() : '';

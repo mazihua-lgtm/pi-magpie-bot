@@ -178,43 +178,31 @@ Every step and every trap (which models can call tools, how much context you nee
 
 ## Cloud
 
+One container, everything inside:
+
 ```sh
-cp .env.example .env        # fill TELEGRAM_BOT_TOKEN and WEB_PASSWORD (a public port needs one)
+cp .env.example .env        # fill at least WEB_PASSWORD; add Telegram etc. if you want them
 docker compose up -d        # from the repo root, so .env is found
 ```
 
-In this mode the bot does not start magpie (`MAGPIE_START=0`), so the free pool is set up once
-inside its container:
+Open `http://<server>:8787` and enter `WEB_PASSWORD` to chat. The bot in the container brings its
+own magpie (the first start downloads it and takes a few minutes), so there is no gateway key and
+no `exec` command to type. Conversations, memory, timers and magpie's keys all live in one volume
+and survive a rebuild.
 
-```sh
-docker compose exec magpie \
-  /magpie plugin add https://github.com/mu-zi-lee/magpie-our-free-model
-docker compose exec -it magpie \
-  /magpie plugin login our-free-model          # choose 1, then Ctrl-D to leave
-docker compose exec magpie \
-  /magpie group add free 'models=our-free-model/*' routing=smart
-docker compose restart bot
-```
+When no model is ready the bot does not restart in a loop: the web page explains and offers a box
+to paste your own key (with signup links per vendor). On a cloud server the box **requires**
+`WEB_PASSWORD` before it saves anything, and is hidden if none is set, so nobody can swap your key.
 
-`-it` is required: the menu needs a terminal. The plugin downloads its own Node runtime the first
-time, so the container must reach `nodejs.org`; if that fails it says so, and the way around is
-your own key below.
+It is published to this machine only (`WEB_BIND=127.0.0.1`); to reach it from a phone or another
+device, set `WEB_BIND=0.0.0.0` and always set `WEB_PASSWORD`.
 
-The magpie container is a gateway belonging to nobody, so it asks for a key of its own on the
-first start (the local one does not): `docker compose exec magpie /magpie gateway-key add bot`,
-put the printed `sk-magpie-key-…` into `MAGPIE_API_KEY` in `.env`, then `docker compose up -d`.
-Without that the bot's page keeps saying the gateway key was refused.
+To run magpie in its own container (for example several bots sharing one gateway), use
+`docker compose -f compose.split.yml up -d`; the steps are at the top of that file.
 
-When no model is ready the bot does not restart in a loop: the web port shows one page saying what
-is missing and what to run. The bot in a container only speaks HTTP to the gateway container and
-has no magpie of its own, so that page keeps to commands there; run locally it also offers the key
-box described above.
-
-Only the web port is exposed; magpie stays on the internal network. It is published to this machine only
-(`WEB_BIND=127.0.0.1`); to reach it from a phone or another device, set `WEB_BIND=0.0.0.0` and always set `WEB_PASSWORD`.
-
-> Note: the free pool is limited per egress IP. A cloud server will most likely get nothing from
-> it — on a server, bring a key or a local model.
+> Note: the free pool is limited per egress IP, so a cloud server will most likely get nothing from
+> it; bring a key or a local model. The container needs to reach github.com to fetch magpie; if it
+> cannot, the log says so and the bot falls back to the page above.
 
 ## What it does
 
