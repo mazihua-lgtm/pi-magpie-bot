@@ -2,6 +2,15 @@
 	"name": "pi-magpie-bot",
 	"version": "0.0.1",
 	"private": true,
+	"description": "An always-on personal assistant with memory and reminders: free models out of the box, your data on your own machine.",
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/mazihua-lgtm/pi-magpie-bot.git"
+	},
+	"homepage": "https://github.com/mazihua-lgtm/pi-magpie-bot#readme",
+	"bugs": {
+		"url": "https://github.com/mazihua-lgtm/pi-magpie-bot/issues"
+	},
 	"type": "module",
 	"license": "MIT",
 	"packageManager": "pnpm@10.15.0",
