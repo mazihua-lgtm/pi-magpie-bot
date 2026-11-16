@@ -11,7 +11,16 @@ import { join, resolve } from 'node:path';
 import { Bot } from '@pi-magpie-bot/brain';
 import { TelegramChannel } from '@pi-magpie-bot/channel-telegram';
 import { WebChannel } from '@pi-magpie-bot/channel-web';
-import { ensureGateway, gatewayConfig, listModels } from '@pi-magpie-bot/gateway';
+import {
+	ensureFreeRoute,
+	ensureGateway,
+	findMagpieBinary,
+	FREE_GROUP,
+	FREE_MODEL_PREFIX,
+	FREE_PLUGIN,
+	gatewayConfig,
+	listModels,
+} from '@pi-magpie-bot/gateway';
 
 /** A `.env` beside the checkout, so a user can set a token in a text editor. */
 function loadDotEnv(path: string): void {
@@ -40,14 +49,17 @@ console.log('[bot] starting up');
 console.log(`[bot] data in ${dataDir}`);
 
 const config = gatewayConfig();
+const log = (line: string) => console.error(`[gateway] ${line}`);
+/** Our own magpie, when this machine has none the user put there. */
+const ourBinDir = join(dataDir, 'bin');
 
 /**
  * A gateway that is down is started or waited for; one that answers with a
  * refusal is not down at all, so send the user to the key instead of a timeout.
  */
-async function modelIds(): Promise<string[]> {
+async function models(): Promise<{ ids: string[]; binary?: string }> {
 	try {
-		return (await listModels(config)).map((model) => model.id);
+		return { ids: (await listModels(config)).map((model) => model.id) };
 	} catch (error) {
 		if (/\b(401|403|429)\b/.test(String(error))) {
 			console.error('[bot] magpie refused this gateway key');
@@ -55,24 +67,51 @@ async function modelIds(): Promise<string[]> {
 			console.error('[bot]   magpie gateway-key add bot');
 			process.exit(1);
 		}
-		await ensureGateway(config, { start: env.MAGPIE_START !== '0' });
-		return (await listModels(config)).map((model) => model.id);
+		// No magpie at all on this machine: the release is fetched and checked
+		// rather than sending someone who only has Node off to install it.
+		const started = await ensureGateway(config, {
+			start: env.MAGPIE_START !== '0',
+			installDir: ourBinDir,
+			log,
+		});
+		return { ids: (await listModels(config)).map((model) => model.id), binary: started.binary };
 	}
 }
 
-const ids = await modelIds();
+const reachable = await models();
+let ids = reachable.ids;
 
-// A brand-new gateway has no routing groups, and an empty model name fails much
-// later and much less clearly: say what to run while the user is still looking.
+// A brand-new gateway has no routing groups. Run the two commands the README
+// lists, rather than making the user copy them out of an error message. A
+// gateway someone already filled with their own models is left alone.
 const wanted = env.MAGPIE_MODEL?.trim();
+const wantsFree = wanted === `group/${FREE_GROUP}`;
+const missesFree = wantsFree ? !ids.includes(wanted) : ids.length === 0;
+if (missesFree && env.MAGPIE_START !== '0') {
+	const tool = reachable.binary ?? findMagpieBinary(env, [join(ourBinDir, 'magpie')]);
+	if (tool) {
+		await ensureFreeRoute({ binary: tool, log });
+		ids = (await listModels(config)).map((model) => model.id);
+	}
+}
+
+// An empty model name fails much later and much less clearly: say what to do
+// while the user is still looking.
 if (wanted && !ids.includes(wanted)) {
 	console.error(`[bot] magpie has no model "${wanted}"`);
-	if (wanted === 'group/free') {
+	if (!ids.some((id) => id.startsWith(FREE_MODEL_PREFIX))) {
+		// The plugin brings the pool, but the pool is behind one browser step:
+		// its console, where a channel is authorized. That is the only thing
+		// this product cannot do for the user.
+		console.error('[bot] the free pool needs its console opened once, in a browser:');
+		console.error('[bot]   magpie plugin login our-free-model');
+		console.error('[bot] open the address it prints, authorize a channel, then start this again');
+	} else {
 		console.error('[bot] the free route has to be created once:');
-		console.error('[bot]   magpie plugin add https://github.com/mu-zi-lee/magpie-our-free-model');
-		console.error(`[bot]   magpie group add free 'models=our-free-model/*' routing=smart`);
+		console.error(`[bot]   magpie plugin add ${FREE_PLUGIN}`);
+		console.error(`[bot]   magpie group add ${FREE_GROUP} 'models=our-free-model/*' routing=smart`);
 	}
-	console.error(`[bot] available now: ${ids.slice(0, 12).join(', ')}${ids.length > 12 ? ', …' : ''}`);
+	console.error(`[bot] available now: ${ids.slice(0, 12).join(', ') || '(nothing)'}${ids.length > 12 ? ', …' : ''}`);
 	process.exit(1);
 }
 

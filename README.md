@@ -1,6 +1,6 @@
 # pi-magpie-bot
 
-一个一直在线、会记事、会提醒你的私人助理。跑在你自己的电脑或服务器上，用免费模型就能开口说话，不需要任何账号和 API key。
+一个一直在线、会记事、会提醒你的私人助理。跑在你自己的电脑或服务器上，用免费模型就能开口说话：不用注册账号，不用 API key。
 
 An always-on personal assistant you run yourself. Memory, reminders and a chat window on any of your devices. It talks to free models out of the box — no account, no API key, no bill.
 
@@ -16,7 +16,7 @@ An always-on personal assistant you run yourself. Memory, reminders and a chat w
 
 Grok Bot 这类产品好用，但你的对话、记忆、日程都在别人服务器上，还要按月付费。这个项目把同样的东西拆开给你：
 
-- **不要钱就能用**：装上就有免费模型。匿名免费池由 [our-free-model](https://github.com/Ebony-Vinyl/dsh-our-free-model) 提供，插件由社区维护，不需要登录、不需要 key。想更好就换成自己的模型，一个地址就能切。
+- **不要钱就能用**：免费池由 [our-free-model](https://github.com/Ebony-Vinyl/dsh-our-free-model) 提供，插件由社区维护，不用注册账号、不用 key。**第一次要在浏览器里打开它的控制台授权一下**（见[免费池第一次要授权](#免费池第一次要授权)），之后就不用人管。想更稳、想用大模型，换成自己的就行，一个模型名就能切。
 - **数据在你手里**：对话、记忆、定时任务都是本地 SQLite 和 Markdown 文件，拷走就是迁移。
 - **断电不死**：回复生成到一半电脑被合上，重启后接着干，不会重复回你两遍。
 - **能碰到的东西要你点头**：让它读写你的文件夹、执行命令，每次都要在聊天里回「是」。
@@ -26,15 +26,29 @@ Grok Bot 这类产品好用，但你的对话、记忆、日程都在别人服�
 需要有 **Node.js 24 或更新**（[下载](https://nodejs.org)；内置数据库用它自带的 SQLite）。macOS、Linux、Windows 的 WSL 都行。
 
 ```sh
-./install.sh          # 装依赖、装 magpie、配免费模型
+pnpm install
 pnpm start            # 启动
 ```
+
+第一步之后就不用人管了：本机没有 magpie 的话它会自己下载官方发布版（比对 SHA256 再装）、装上免费模型插件、建好 `free` 路由组。想连 `.env` 一起生成就改用 `./install.sh`。
 
 然后打开 <http://127.0.0.1:8787>，直接打字说话。
 
 ![浏览器里说一句「十分钟后提醒我关火」，它就把提醒排进了日程：模型是免费的，没填任何 key](docs/chat.png)
 
 装完想知道它在哪、数据在哪、怎么换模型，看下面的配置表。
+
+### 免费池第一次要授权
+
+免费模型来自一个社区插件。它不要账号、不要 key，但第一次得把它的控制台在浏览器里打开一次：
+
+```sh
+magpie plugin login our-free-model
+```
+
+终端会打印一个地址——本机是 `127.0.0.1` 上的页面，服务器上是临时的 `trycloudflare.com` 地址（同样不用注册）。打开它，按页面提示完成授权（EAC 授权，或接一个渠道账号），回到网关刷新模型，`group/free` 里就有模型了。
+
+只此一次，之后重启、换机器都不用再管。这一步是插件自己的规矩，本项目替不了；不想做这一步就用自己的模型，见下一节。
 
 ### 接到 Telegram
 
@@ -127,6 +141,7 @@ Telegram / 网页 ──▶ inbox（去重、排队）──▶ pi-durable 会�
 ## 已知的边界 / Honest limits
 
 - 免费池**按 IP 限量**，忙的时候会排队或失败；`group/free` 会自动换下一个模型，但它不能变出额度。
+- 免费池的授权过期、或上游改接口时，要再打开一次它的控制台（`magpie plugin login our-free-model`）。
 - pi-durable 标着 *experimental*，升级时接口可能变；本项目钉在 `1.5.x`。
 - 一个数据目录只能有一个进程在跑（SQLite 单写者）。
 - 审批卡只认「是 / 否」这类短回答；开着卡的时候你说别的话，它会当作新消息。
