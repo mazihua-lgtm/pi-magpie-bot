@@ -90,7 +90,11 @@ export class WebChannel implements Channel {
 	private server: ReturnType<typeof createServer> | undefined;
 	private bound = { port: 0, url: '' };
 
-	constructor(private readonly options: WebChannelOptions) {}
+	private readonly options: WebChannelOptions;
+
+	constructor(options: WebChannelOptions) {
+		this.options = options;
+	}
 
 	get url(): string {
 		return this.bound.url;

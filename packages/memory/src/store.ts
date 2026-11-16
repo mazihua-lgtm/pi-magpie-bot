@@ -18,7 +18,11 @@ import { join } from 'node:path';
 export type ConversationKey = string | number;
 
 export class MemoryStore {
-	constructor(private readonly root: string) {}
+	private readonly root: string;
+
+	constructor(root: string) {
+		this.root = root;
+	}
 
 	/** Guards the filesystem: a note name is a slug, never a path. */
 	private static slug(name: string): string {

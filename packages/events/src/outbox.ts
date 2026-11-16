@@ -38,7 +38,11 @@ const MAX_ATTEMPTS = 3;
  * and is not retried, so a restart cannot answer the same thing twice.
  */
 export class Outbox {
-	constructor(private readonly host: HostDb) {}
+	private readonly host: HostDb;
+
+	constructor(host: HostDb) {
+		this.host = host;
+	}
 
 	enqueue(message: OutgoingMessage): number {
 		const result = this.host.db

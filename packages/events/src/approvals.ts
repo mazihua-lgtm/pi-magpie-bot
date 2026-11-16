@@ -32,7 +32,11 @@ const NO = /^(否|不|不行|不要|拒绝|取消|别|no|n|nope|stop|cancel)$/i;
  * wait but never the question, and the answer arrives as a normal chat message.
  */
 export class Approvals {
-	constructor(private readonly host: HostDb) {}
+	private readonly host: HostDb;
+
+	constructor(host: HostDb) {
+		this.host = host;
+	}
 
 	ask(request: ApprovalRequest): string {
 		const id = randomUUID().slice(0, 8);

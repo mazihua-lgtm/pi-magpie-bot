@@ -22,10 +22,10 @@ RUN corepack enable
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml tsconfig.json ./
 COPY packages ./packages
 COPY apps ./apps
-RUN pnpm install --frozen-lockfile
+# Production only: node runs the TypeScript sources itself, so the compiler, the
+# test runner and tsx are not needed to serve anyone.
+RUN pnpm install --prod --frozen-lockfile
 
-# Set only after installing: the app runs through tsx, which is a dev dependency,
-# and a production install would leave it out.
 ENV NODE_ENV=production
 
 # Not root: this process talks to strangers on a chat platform.
@@ -34,4 +34,4 @@ USER node
 
 VOLUME /data
 EXPOSE 8787
-CMD ["node_modules/.bin/tsx", "apps/bot/src/main.ts"]
+CMD ["node", "apps/bot/src/main.ts"]

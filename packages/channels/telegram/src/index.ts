@@ -57,7 +57,10 @@ export class TelegramChannel implements Channel {
 	private hinted = false;
 	private loop: Promise<void> | undefined;
 
-	constructor(private readonly options: TelegramOptions) {
+	private readonly options: TelegramOptions;
+
+	constructor(options: TelegramOptions) {
+		this.options = options;
 		this.token = options.token;
 		this.apiBase = (options.apiBase ?? 'https://api.telegram.org').replace(/\/$/, '');
 		this.fetchImpl = options.fetch ?? fetch;

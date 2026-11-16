@@ -86,7 +86,10 @@ export class FeishuChannel implements Channel {
 	readonly id = 'feishu';
 	private readonly transport: FeishuTransport;
 
-	constructor(private readonly options: FeishuOptions) {
+	private readonly options: FeishuOptions;
+
+	constructor(options: FeishuOptions) {
+		this.options = options;
 		this.transport = options.transport ?? sdkTransport(options);
 	}
 

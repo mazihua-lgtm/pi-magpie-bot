@@ -6,7 +6,11 @@ import type { HostDb } from './db.ts';
  * exactly one owner, or a stranger spends your credits.
  */
 export class Settings {
-	constructor(private readonly host: HostDb) {}
+	private readonly host: HostDb;
+
+	constructor(host: HostDb) {
+		this.host = host;
+	}
 
 	get(key: string): string | undefined {
 		const row = this.host.db.prepare(`SELECT value FROM settings WHERE key = ?`).get(key) as

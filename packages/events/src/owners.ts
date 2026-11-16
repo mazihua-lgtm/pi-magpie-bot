@@ -10,10 +10,13 @@ export type Admission = 'allowed' | 'claimed' | 'denied';
  * by getting there first.
  */
 export class Owners {
-	constructor(
-		private readonly settings: Settings,
-		private readonly extra: readonly string[] = [],
-	) {}
+	private readonly settings: Settings;
+	private readonly extra: readonly string[];
+
+	constructor(settings: Settings, extra: readonly string[] = []) {
+		this.settings = settings;
+		this.extra = extra;
+	}
 
 	check(channel: string, identity: string): Admission {
 		if (this.extra.includes(identity)) return 'allowed';

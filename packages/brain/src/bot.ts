@@ -103,17 +103,16 @@ export class Bot {
 	private readonly memory: MemoryStore;
 	private readonly channels = new Map<string, Channel>();
 	private readonly now: () => number;
+	private readonly harness: Harness;
+	private readonly modelId: string;
+	private readonly systemPrompt: string;
 	private timers: NodeJS.Timeout[] = [];
 	private closed = false;
 
-	private constructor(
-		private readonly harness: Harness,
-		host: HostDb,
-		private readonly modelId: string,
-		private readonly systemPrompt: string,
-		dataDir: string,
-		now: () => number,
-	) {
+	private constructor(harness: Harness, host: HostDb, modelId: string, systemPrompt: string, dataDir: string, now: () => number) {
+		this.harness = harness;
+		this.modelId = modelId;
+		this.systemPrompt = systemPrompt;
 		this.host = host;
 		this.inbox = new Inbox(host);
 		this.outbox = new Outbox(host);

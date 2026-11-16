@@ -18,7 +18,7 @@
 		"node": ">=24"
 	},
 	"scripts": {
-		"start": "tsx apps/bot/src/main.ts",
+		"start": "node apps/bot/src/main.ts",
 		"build": "pnpm -r --if-present run build",
 		"typecheck": "tsc --noEmit",
 		"test": "vitest run",

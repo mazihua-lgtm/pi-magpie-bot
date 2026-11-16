@@ -27,7 +27,11 @@ export interface InboxRow {
  * `running`, and `reclaim` puts it back exactly once.
  */
 export class Inbox {
-	constructor(private readonly host: HostDb) {}
+	private readonly host: HostDb;
+
+	constructor(host: HostDb) {
+		this.host = host;
+	}
 
 	/** Returns false when this exact platform message was already accepted. */
 	admit(event: IncomingEvent): boolean {

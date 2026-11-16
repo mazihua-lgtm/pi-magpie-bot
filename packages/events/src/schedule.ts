@@ -29,7 +29,11 @@ export interface ScheduleRow {
  * run; this covers "wake me at 07:00 tomorrow", when no run exists yet.
  */
 export class Schedules {
-	constructor(private readonly host: HostDb) {}
+	private readonly host: HostDb;
+
+	constructor(host: HostDb) {
+		this.host = host;
+	}
 
 	add(input: ScheduleInput): string {
 		const id = randomUUID();

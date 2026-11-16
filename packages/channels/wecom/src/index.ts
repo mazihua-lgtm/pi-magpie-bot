@@ -83,7 +83,10 @@ export class WecomChannel implements Channel {
 	readonly id = 'wecom';
 	private readonly transport: WecomTransport;
 
-	constructor(private readonly options: WecomOptions) {
+	private readonly options: WecomOptions;
+
+	constructor(options: WecomOptions) {
+		this.options = options;
 		this.transport = options.transport ?? sdkTransport(options);
 	}
 

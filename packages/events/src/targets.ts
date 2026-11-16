@@ -16,7 +16,11 @@ export interface BoundTarget extends Target {
  * (a reminder firing at 07:00, a follow-up) knows where to send it.
  */
 export class Targets {
-	constructor(private readonly host: HostDb) {}
+	private readonly host: HostDb;
+
+	constructor(host: HostDb) {
+		this.host = host;
+	}
 
 	bind(target: Target): void {
 		const now = Date.now();
