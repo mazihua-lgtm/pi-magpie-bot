@@ -91,6 +91,10 @@ docker compose -f deploy/docker-compose.yml exec magpie \
 docker compose -f deploy/docker-compose.yml restart bot
 ```
 
+免费池还要在浏览器里授权一次：容器里跑 `… exec magpie /magpie plugin login our-free-model`，用打印出来的临时地址（不用 Cloudflare 账号）打开控制台，步骤与限制见[插件的说明](https://github.com/mu-zi-lee/magpie-our-free-model)。
+
+模型还没弄好时 bot 不会反复重启：打开网页端口会看到一页说明，写着差哪一步、该敲什么。
+
 只有网页端口对外，magpie 在内部网络里。要网页版一直开着，就把 `WEB_HOST=0.0.0.0` 留给容器、`WEB_PASSWORD` 设成你自己记得住的。
 
 > 说明：免费池按出口 IP 限量。云服务器上大概率拿不到免费模型，云端模式请自带 key 或接本地模型。

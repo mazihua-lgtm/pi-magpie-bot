@@ -10,7 +10,7 @@ import { homedir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { Bot } from '@pi-magpie-bot/brain';
 import { TelegramChannel } from '@pi-magpie-bot/channel-telegram';
-import { WebChannel } from '@pi-magpie-bot/channel-web';
+import { serveSetupPage, WebChannel } from '@pi-magpie-bot/channel-web';
 import {
 	ensureFreeRoute,
 	ensureGateway,
@@ -95,14 +95,17 @@ if (missesFree && env.MAGPIE_START !== '0') {
 	}
 }
 
-// An empty model name fails much later and much less clearly: say what to do
-// while the user is still looking.
-if (wanted && !ids.includes(wanted)) {
-	console.error(`[bot] magpie has no model "${wanted}"`);
-	if (!ids.some((id) => id.startsWith(FREE_MODEL_PREFIX))) {
-		// The plugin brings the pool, but the pool is behind one browser step:
-		// its console, where a channel is authorized. That is the only thing
-		// this product cannot do for the user.
+// No model is a first-run state, not a crash: say what is missing, and keep a
+// page up saying it, because whoever started this from a compose file has no
+// terminal to read.
+const modelOk = wanted ? ids.includes(wanted) : ids.length > 0;
+if (!modelOk) {
+	const gone = wanted ? `magpie has no model "${wanted}"` : 'magpie has no models at all';
+	console.error(`[bot] ${gone}`);
+	// The free plugin brings the pool, but the pool sits behind one browser
+	// step, its console. That much this product cannot do for someone.
+	const waitingForConsole = !ids.some((id) => id.startsWith(FREE_MODEL_PREFIX));
+	if (waitingForConsole) {
 		console.error('[bot] the free pool needs its console opened once, in a browser:');
 		console.error('[bot]   magpie plugin login our-free-model');
 		console.error('[bot] open the address it prints, authorize a channel, then start this again');
@@ -112,7 +115,28 @@ if (wanted && !ids.includes(wanted)) {
 		console.error(`[bot]   magpie group add ${FREE_GROUP} 'models=our-free-model/*' routing=smart`);
 	}
 	console.error(`[bot] available now: ${ids.slice(0, 12).join(', ') || '(nothing)'}${ids.length > 12 ? ', …' : ''}`);
-	process.exit(1);
+
+	if (env.WEB_PORT === '0') process.exit(1);
+	const url = await serveSetupPage({
+		title: '还不能聊天：magpie 里没有能用的模型',
+		reason: waitingForConsole
+			? '免费模型插件装上了，但它手里还没有模型：要在浏览器里打开它的控制台授权一次，那一步只能由人来做。'
+			: '网关里现在没有这个模型。',
+		steps: waitingForConsole
+			? [
+					{ command: 'magpie plugin login our-free-model', note: '在浏览器里打开它打印的地址，按页面提示授权，然后回来重启。' },
+					{ command: 'magpie provider add deepseek sk-…', note: '不想走免费池就填自己的 key（magpie presets 看厂商代号）。' },
+				]
+			: [
+					{ command: `magpie group add ${FREE_GROUP} 'models=our-free-model/*' routing=smart`, note: '把免费模型放进路由组。' },
+					{ command: 'magpie provider add deepseek sk-…', note: '或者填自己的 key。' },
+				],
+		docsUrl: 'https://github.com/mazihua-lgtm/pi-magpie-bot/blob/main/docs/own-models.md',
+		host: env.WEB_HOST ?? '127.0.0.1',
+		port: Number(env.WEB_PORT ?? 8787),
+	});
+	console.error(`[bot] a page saying this is at ${url}`);
+	await new Promise(() => {});
 }
 
 const bot = await Bot.open({
