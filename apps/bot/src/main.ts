@@ -56,7 +56,7 @@ const log = (line: string) => console.error(`[gateway] ${line}`);
 const ourBinDir = join(dataDir, 'bin');
 /** How to reach magpie's own CLI: here, or in the container that runs it. */
 const remoteGateway = env.MAGPIE_START === '0';
-const magpieCli = remoteGateway ? 'docker compose -f deploy/docker-compose.yml exec magpie /magpie' : 'magpie';
+const magpieCli = remoteGateway ? 'docker compose exec magpie /magpie' : 'magpie';
 /** Which model the user asked for, and whether that means the free pool. */
 const wanted = env.MAGPIE_MODEL?.trim();
 const wantsFree = wanted === `group/${FREE_GROUP}`;
@@ -150,7 +150,7 @@ async function models(): Promise<Look> {
 						note: '把打印出来的 sk-magpie-key-… 填进 .env 的 MAGPIE_API_KEY。',
 					},
 					{
-						command: remoteGateway ? 'docker compose -f deploy/docker-compose.yml up -d' : 'pnpm start',
+						command: remoteGateway ? 'docker compose up -d' : 'pnpm start',
 						note: '改完 .env 要重新起一次才生效。',
 					},
 				],

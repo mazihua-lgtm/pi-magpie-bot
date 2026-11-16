@@ -1,20 +1,21 @@
 # 云端模式 / cloud mode:
 #
 #   cp .env.example .env        # 填 TELEGRAM_BOT_TOKEN 和 WEB_PASSWORD
-#   docker compose -f deploy/docker-compose.yml up -d
+#   docker compose up -d        # 在仓库根目录跑；.env 就在这个文件旁边
 #
 # magpie 只在内部网络里，不对外开端口；对外只有网页聊天。
 #
 # 容器里的 magpie 要自己的 key（本机跑的时候不用）：
-#   docker compose -f deploy/docker-compose.yml exec magpie /magpie gateway-key add bot
+#   docker compose exec magpie /magpie gateway-key add bot
 # 把打印出来的 sk-magpie-key-… 写进 .env 的 MAGPIE_API_KEY，再 up -d 一次。
 #
 # 新起来的 magpie 里还没有免费路线，开一次：
-#   docker compose -f deploy/docker-compose.yml exec magpie \
+#   docker compose exec magpie \
 #     /magpie plugin add https://github.com/mu-zi-lee/magpie-our-free-model
-#   docker compose -f deploy/docker-compose.yml exec magpie \
+#   docker compose exec -it magpie /magpie plugin login our-free-model   # 菜单选 1
+#   docker compose exec magpie \
 #     /magpie group add free 'models=our-free-model/*' routing=smart
-# 然后 docker compose -f deploy/docker-compose.yml restart bot
+# 然后 docker compose restart bot
 services:
   magpie:
     image: ghcr.io/yetone/magpie:latest
@@ -31,7 +32,7 @@ services:
 
   bot:
     build:
-      context: ..
+      context: .
       dockerfile: Dockerfile
     restart: unless-stopped
     depends_on:

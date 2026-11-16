@@ -1,4 +1,4 @@
-# The bot only; magpie runs as its own service (see deploy/docker-compose.yml).
+# The bot only; magpie runs as its own service (see compose.yml).
 FROM node:24-bookworm-slim
 
 WORKDIR /app

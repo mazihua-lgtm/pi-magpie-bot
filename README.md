@@ -78,22 +78,24 @@ magpie provider add ollama url=http://127.0.0.1:11434/v1 models=qwen3:8b
 
 ```sh
 cp .env.example .env        # 填 TELEGRAM_BOT_TOKEN 和 WEB_PASSWORD（公网一定要填）
-docker compose -f deploy/docker-compose.yml up -d
+docker compose up -d        # 在仓库根目录跑，.env 就在旁边
 ```
 
 云端这条路上 bot 不启动 magpie（`MAGPIE_START=0`），所以免费池得自己在容器里弄一次：
 
 ```sh
-docker compose -f deploy/docker-compose.yml exec magpie \
+docker compose exec magpie \
   /magpie plugin add https://github.com/mu-zi-lee/magpie-our-free-model
-docker compose -f deploy/docker-compose.yml exec -it magpie \
+docker compose exec -it magpie \
   /magpie plugin login our-free-model          # 菜单选 1，登录完按 Ctrl-D 退出
-docker compose -f deploy/docker-compose.yml exec magpie \
+docker compose exec magpie \
   /magpie group add free 'models=our-free-model/*' routing=smart
-docker compose -f deploy/docker-compose.yml restart bot
+docker compose restart bot
 ```
 
 `-it` 不能省：它要一个终端才弹菜单。插件第一次会下载自己的 Node 运行时，容器得能出网到 `nodejs.org`，下不来会报「自动安装 Node 失败」——那就走下面的自带 key。
+
+magpie 容器是「别人家的网关」，第一次起会要一把自己的 key（本机跑的时候不用）：`docker compose exec magpie /magpie gateway-key add bot`，把打印出来的 `sk-magpie-key-…` 填进 `.env` 的 `MAGPIE_API_KEY`，再 `docker compose up -d`。少这一步，bot 那一页会一直写着「不接受这个网关密钥」。
 
 模型还没弄好时 bot 不会反复重启：打开网页端口会看到一页说明，写着差哪一步、该敲什么。容器里的 bot 只跟网关容器说 HTTP、自己手里没有 magpie，所以这一页在云端只给命令；本机跑的时候这一页还会带一个 key 输入框（见上面「用你自己的模型」）。
 
