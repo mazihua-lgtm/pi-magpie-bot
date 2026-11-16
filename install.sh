@@ -96,7 +96,7 @@ if [ "$MANAGE_MAGPIE" = 1 ] && [ -z "$MAGPIE_BIN" ] && [ ! -x "$HOME/.local/bin/
 	mkdir -p "$HOME/.local/bin"
 	TMP="$(mktemp -d)"
 	fetch "$URL" "$TMP/$FILE" || die "could not download magpie from $URL"
-	if curl -fsSL --connect-timeout 15 --max-time 120 "$SUMS" -o "$TMP/SHA256SUMS" 2>/dev/null; then
+	if fetch "$SUMS" "$TMP/SHA256SUMS" >/dev/null 2>&1; then
 		if (cd "$TMP" && grep " $FILE\$" SHA256SUMS | checksum_ok >/dev/null 2>&1); then
 			say "checksum ok"
 		else
@@ -151,7 +151,7 @@ if [ "$MANAGE_MAGPIE" = 1 ] && [ -n "$MAGPIE_BIN" ]; then
 		SIGNIN="$(mktemp)"
 		if ! printf '1\n' | "$MAGPIE_BIN" plugin login our-free-model >"$SIGNIN" 2>&1; then
 			printf '1\n' | env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY "$MAGPIE_BIN" plugin login our-free-model >"$SIGNIN" 2>&1 ||
-				warn "the sign-in did not finish: $(grep -v '^[[:space:]]*$' "$SIGNIN" | tail -n 1)"
+				warn "the sign-in did not finish: $(grep -v '^[[:space:]]*$' "$SIGNIN" | tail -n 1 | sed 's/^> *//')"
 		fi
 		rm -f "$SIGNIN"
 
