@@ -104,6 +104,7 @@ export class Bot {
 	private readonly channels = new Map<string, Channel>();
 	private readonly now: () => number;
 	private timer: NodeJS.Timeout | undefined;
+	private ticking = false;
 	private closed = false;
 
 	private constructor(
@@ -393,7 +394,16 @@ export class Bot {
 			await this.close();
 		};
 		this.timer = setInterval(() => {
-			void this.tick().catch((error) => console.error('[bot] tick failed', error));
+			// One worker at a time. A run can take longer than the interval, and
+			// two ticks at once would claim the same waiting messages and answer
+			// them twice — the one thing this design promises not to do.
+			if (this.ticking) return;
+			this.ticking = true;
+			void this.tick()
+				.catch((error) => console.error('[bot] tick failed', error))
+				.finally(() => {
+					this.ticking = false;
+				});
 		}, intervalMs);
 		return () => void stop();
 	}

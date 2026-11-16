@@ -98,6 +98,25 @@ describe('bot ingest', () => {
 	});
 });
 
+describe('the loop', () => {
+	it('does not start a second tick while one is still running', async () => {
+		const { bot } = await openBot(await dataDir());
+		let calls = 0;
+		// A run that takes longer than the interval: exactly the case where two
+		// ticks would claim the same waiting message and answer it twice.
+		bot.tick = async () => {
+			calls += 1;
+			await new Promise((resolve) => setTimeout(resolve, 40));
+		};
+
+		const stop = bot.start(5);
+		await new Promise((resolve) => setTimeout(resolve, 120));
+		stop();
+
+		expect(calls).toBeLessThanOrEqual(3);
+	});
+});
+
 describe('default model', () => {
 	it('takes a free routing group before anything that costs money', async () => {
 		const { pickDefaultModel } = await import('../src/index.ts');

@@ -220,9 +220,18 @@ export class WebChannel implements Channel {
 		if (this.options.history) {
 			// The transcript already holds what the buffer holds, and more: show it
 			// rather than the buffer, so a refresh brings the whole chat back.
-			state.buffer.length = 0;
-			for (const entry of await this.options.history(session)) {
+			const history = await this.options.history(session);
+			for (const entry of history) {
 				response.write(`data: ${JSON.stringify(entry)}\n\n`);
+			}
+			// But not all of it. A notice out of the outbox — "that one was
+			// interrupted" after a crash — is never part of the conversation, so
+			// it only ever exists in the buffer, and dropping that whole buffer
+			// would drop the one message the user most needs to see.
+			const said = new Set(history.filter((entry) => entry.role === 'bot').map((entry) => entry.text));
+			for (const text of state.buffer.splice(0)) {
+				if (said.has(text)) continue;
+				response.write(`data: ${JSON.stringify({ text })}\n\n`);
 			}
 		} else {
 			for (const text of state.buffer.splice(0)) {

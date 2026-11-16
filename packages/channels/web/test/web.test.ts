@@ -95,6 +95,36 @@ describe('web channel', () => {
 		expect(seen).toContain('"role":"me"');
 	});
 
+	it('keeps a notice the transcript never had', async () => {
+		const { channel, url } = await start({
+			history: async () => [
+				{ role: 'me', text: '我明天去济南' },
+				{ role: 'bot', text: '记下了' },
+			],
+		});
+		const page = await fetch(`${url}/`);
+		const cookie = page.headers.get('set-cookie')?.split(';')[0] ?? '';
+		const session = cookie.slice(cookie.indexOf('=') + 1);
+
+		// One answer the transcript already has, and one crash notice it never
+		// will: the notice only lives in the outbox and the buffer.
+		await channel.send(session, '记下了');
+		await channel.send(session, '刚才那条消息处理到一半中断了，我没能回上来。麻烦再说一次。');
+
+		const events = await fetch(`${url}/api/events`, { headers: { cookie } });
+		const reader = events.body?.getReader();
+		const decoder = new TextDecoder();
+		let seen = '';
+		for (let i = 0; i < 10 && !seen.includes('中断了'); i++) {
+			const chunk = await reader?.read();
+			if (!chunk?.value) break;
+			seen += decoder.decode(chunk.value, { stream: true });
+		}
+		await reader?.cancel();
+		expect(seen).toContain('中断了');
+		expect(seen.match(/"text":"记下了"/g)).toHaveLength(1);
+	});
+
 	it('ships a chat page whose script parses', async () => {
 		const { url } = await start();
 		const page = await (await fetch(`${url}/`)).text();
