@@ -185,7 +185,8 @@ cp .env.example .env        # fill at least WEB_PASSWORD; add Telegram etc. if y
 docker compose up -d        # from the repo root, so .env is found
 ```
 
-Open `http://<server>:8787` and enter `WEB_PASSWORD` to chat. The bot in the container brings its
+Open `http://<server>:8787` and enter `WEB_PASSWORD` to chat. On a phone, "add to home screen"
+gives it an icon that opens full screen, like an app — nothing to install, no store involved. The bot in the container brings its
 own magpie (the first start downloads it and takes a few minutes), so there is no gateway key and
 no `exec` command to type. Conversations, memory, timers and magpie's keys all live in one volume
 and survive a rebuild.

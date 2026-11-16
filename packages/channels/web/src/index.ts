@@ -2,6 +2,7 @@ import { createHmac, randomBytes, randomUUID, timingSafeEqual } from 'node:crypt
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import type { Channel, MessageEvent } from '@pi-magpie-bot/brain';
 import { LOGIN_PAGE, PAGE } from './page.ts';
+import { ICONS, MANIFEST, SERVICE_WORKER } from './pwa.ts';
 export { serveSetupPage, setupPage, type SetupPageHandle, type SetupPageOptions } from './setup.ts';
 
 export interface WebChannelOptions {
@@ -190,6 +191,25 @@ export class WebChannel implements Channel {
 		}
 
 		if (url.pathname === '/healthz') return json(response, 200, { ok: true });
+
+		// For "add to home screen". No session, no secrets: a browser fetches these
+		// before the page is even shown, and a stale-looking icon is not worth a 401.
+		if (url.pathname === '/manifest.webmanifest') {
+			response.writeHead(200, { 'content-type': 'application/manifest+json; charset=utf-8', 'cache-control': 'public, max-age=3600' });
+			response.end(MANIFEST);
+			return;
+		}
+		if (url.pathname === '/sw.js') {
+			response.writeHead(200, { 'content-type': 'text/javascript; charset=utf-8', 'cache-control': 'no-cache' });
+			response.end(SERVICE_WORKER);
+			return;
+		}
+		const icon = ICONS[url.pathname];
+		if (icon) {
+			response.writeHead(200, { 'content-type': 'image/png', 'cache-control': 'public, max-age=86400' });
+			response.end(icon);
+			return;
+		}
 
 		const session = this.session(request, response);
 

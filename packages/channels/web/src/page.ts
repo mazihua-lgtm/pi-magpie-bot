@@ -6,12 +6,19 @@
 export const PAGE = `<!doctype html>
 <html lang="zh-CN">
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#2f7cf6">
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="icon" href="/icon-192.png">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="我的助理">
+<meta name="mobile-web-app-capable" content="yes">
 <title>我的助理</title>
 <style>
   :root { color-scheme: light dark; }
   body { margin: 0; font: 16px/1.6 system-ui, -apple-system, "PingFang SC", sans-serif; height: 100dvh; display: flex; flex-direction: column; }
-  header { padding: 12px 16px; border-bottom: 1px solid #8884; font-weight: 600; }
+  header { padding: 12px 16px; padding-top: max(12px, env(safe-area-inset-top)); border-bottom: 1px solid #8884; font-weight: 600; }
   #log { flex: 1; overflow-y: auto; padding: 16px; display: flex; flex-direction: column; gap: 10px; }
   .msg { max-width: 44rem; padding: 10px 14px; border-radius: 14px; white-space: pre-wrap; word-break: break-word; }
   .me { align-self: flex-end; background: #2f7cf6; color: #fff; }
@@ -19,7 +26,7 @@ export const PAGE = `<!doctype html>
   .sys { align-self: center; font-size: 13px; opacity: .6; }
   code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .92em; background: #8882; padding: 1px 4px; border-radius: 4px; }
   a { color: inherit; }
-  form { display: flex; gap: 8px; padding: 12px 16px; border-top: 1px solid #8884; }
+  form { display: flex; gap: 8px; padding: 12px 16px; padding-bottom: max(12px, env(safe-area-inset-bottom)); padding-left: max(16px, env(safe-area-inset-left)); padding-right: max(16px, env(safe-area-inset-right)); border-top: 1px solid #8884; }
   textarea { flex: 1; resize: none; font: inherit; padding: 10px; border-radius: 12px; border: 1px solid #8886; background: transparent; color: inherit; }
   .chips { align-self: flex-start; display: flex; flex-wrap: wrap; gap: 8px; }
   .chip { padding: 8px 14px; border-radius: 999px; background: transparent; color: inherit; border: 1px solid #8886; }
@@ -98,6 +105,20 @@ export const PAGE = `<!doctype html>
     }
   } catch (error) {}
 
+  // Only so a phone offers "add to home screen"; nothing is cached.
+  if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').catch(() => {});
+
+  // A phone user can put this on the home screen and then it opens full screen,
+  // with an icon, like an app. Said once: after that it is just noise.
+  const standalone = window.matchMedia('(display-mode: standalone)').matches || navigator.standalone;
+  try {
+    if (!standalone && !localStorage.getItem('hint')) {
+      localStorage.setItem('hint', '1');
+      const ios = /iPhone|iPad|iPod/.test(navigator.userAgent);
+      add('sys', ios ? '想更像 App：点下面的分享按钮，选「添加到主屏幕」。' : '想更像 App：点右上角菜单，选「添加到主屏幕」。');
+    }
+  } catch (error) {}
+
   const events = new EventSource('/api/events');
   events.onmessage = (event) => {
     const data = JSON.parse(event.data);
@@ -152,7 +173,14 @@ export const PAGE = `<!doctype html>
 export const LOGIN_PAGE = `<!doctype html>
 <html lang="zh-CN">
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#2f7cf6">
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="icon" href="/icon-192.png">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="我的助理">
+<meta name="mobile-web-app-capable" content="yes">
 <title>进入助理</title>
 <style>
   body { margin: 0; font: 16px/1.6 system-ui, -apple-system, "PingFang SC", sans-serif; height: 100dvh; display: grid; place-items: center; }

@@ -230,3 +230,39 @@ describe('web channel', () => {
 		expect(messages).toHaveLength(1);
 	});
 });
+
+describe('installing the page on a phone', () => {
+	it('serves a manifest whose icons are really there', async () => {
+		const { url } = await start();
+		const response = await fetch(`${url}/manifest.webmanifest`);
+		expect(response.headers.get('content-type')).toContain('manifest+json');
+		const manifest = (await response.json()) as { name: string; display: string; icons: Array<{ src: string; sizes: string }> };
+
+		expect(manifest.display).toBe('standalone');
+		expect(manifest.icons.map((icon) => icon.sizes)).toEqual(['192x192', '512x512']);
+		for (const icon of manifest.icons) {
+			const file = await fetch(`${url}${icon.src}`);
+			expect(file.status).toBe(200);
+			expect(file.headers.get('content-type')).toBe('image/png');
+			expect((await file.arrayBuffer()).byteLength).toBeGreaterThan(2000);
+		}
+	});
+
+	it('serves the service worker Android asks for, without caching anything', async () => {
+		const { url } = await start();
+		const response = await fetch(`${url}/sw.js`);
+		expect(response.status).toBe(200);
+		const source = await response.text();
+		// A stale page would answer for the assistant; the handler stays empty.
+		expect(source).toContain("addEventListener('fetch'");
+		expect(source).not.toContain('caches');
+	});
+
+	it('links the manifest and registers the worker from the chat page', async () => {
+		const { url } = await start();
+		const page = await (await fetch(`${url}/`)).text();
+		expect(page).toContain('rel="manifest" href="/manifest.webmanifest"');
+		expect(page).toContain('apple-touch-icon');
+		expect(page).toContain("navigator.serviceWorker.register('/sw.js')");
+	});
+});
