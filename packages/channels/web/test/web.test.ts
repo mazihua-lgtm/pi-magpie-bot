@@ -94,6 +94,17 @@ describe('web channel', () => {
 		expect(seen).toContain('"role":"me"');
 	});
 
+	it('ships a chat page whose script parses', async () => {
+		const { url } = await start();
+		const page = await (await fetch(`${url}/`)).text();
+		const script = page.slice(page.indexOf('<script>') + 8, page.lastIndexOf('</script>'));
+
+		// The page is one long template literal, so a stray escape can turn the
+		// whole script into a syntax error and leave a blank window. Parsing it
+		// here is the only thing that notices.
+		expect(() => new Function(script)).not.toThrow();
+	});
+
 	it('asks for a password when one is set', async () => {
 		const { url, messages } = await start({ password: 'hunter2' });
 

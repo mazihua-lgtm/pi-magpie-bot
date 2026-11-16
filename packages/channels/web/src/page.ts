@@ -17,6 +17,8 @@ export const PAGE = `<!doctype html>
   .me { align-self: flex-end; background: #2f7cf6; color: #fff; }
   .bot { align-self: flex-start; background: #8881; }
   .sys { align-self: center; font-size: 13px; opacity: .6; }
+  code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .92em; background: #8882; padding: 1px 4px; border-radius: 4px; }
+  a { color: inherit; }
   form { display: flex; gap: 8px; padding: 12px 16px; border-top: 1px solid #8884; }
   textarea { flex: 1; resize: none; font: inherit; padding: 10px; border-radius: 12px; border: 1px solid #8886; background: transparent; color: inherit; }
   button { font: inherit; padding: 0 18px; border-radius: 12px; border: 0; background: #2f7cf6; color: #fff; }
@@ -34,10 +36,40 @@ export const PAGE = `<!doctype html>
   const text = document.getElementById('text');
   const send = document.getElementById('send');
 
+  // Models write a little markdown whether or not anyone asked. Showing the
+  // asterisks to a person who is not a programmer looks broken, so the three
+  // bits that show up most are drawn as they were meant. Everything is built
+  // from text nodes: nothing a model writes can become markup.
+  const parts = /(\\*\\*[^*\\n]+\\*\\*|\`[^\`\\n]+\`|https?:\\/\\/[^\\s]+)/g;
+
+  function render(target, body) {
+    body.split(parts).forEach((piece) => {
+      if (!piece) return;
+      if (piece.startsWith('**') && piece.endsWith('**')) {
+        const strong = document.createElement('strong');
+        strong.textContent = piece.slice(2, -2);
+        target.appendChild(strong);
+      } else if (piece.startsWith('\`') && piece.endsWith('\`')) {
+        const code = document.createElement('code');
+        code.textContent = piece.slice(1, -1);
+        target.appendChild(code);
+      } else if (piece.startsWith('http')) {
+        const link = document.createElement('a');
+        link.href = piece;
+        link.rel = 'noreferrer noopener';
+        link.target = '_blank';
+        link.textContent = piece;
+        target.appendChild(link);
+      } else {
+        target.appendChild(document.createTextNode(piece));
+      }
+    });
+  }
+
   function add(kind, body) {
     const div = document.createElement('div');
     div.className = 'msg ' + kind;
-    div.textContent = body;
+    render(div, body);
     log.appendChild(div);
     log.scrollTop = log.scrollHeight;
   }
