@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest';
+import { connect } from 'node:net';
 import { WebChannel } from '../src/index.ts';
 
 const servers: WebChannel[] = [];
@@ -103,6 +104,27 @@ describe('web channel', () => {
 		// whole script into a syntax error and leave a blank window. Parsing it
 		// here is the only thing that notices.
 		expect(() => new Function(script)).not.toThrow();
+	});
+
+	it('answers a junk request line instead of failing it', async () => {
+		const { url } = await start();
+		const { hostname, port } = new URL(url);
+
+		// fetch cannot send a broken request line, so go at the socket. "//" is
+		// what a bare `curl //` produces, and it used to become a 500 in the log.
+		const reply = await new Promise<string>((resolve, reject) => {
+			const socket = connect(Number(port), hostname, () => {
+				socket.write('GET // HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n');
+			});
+			let data = '';
+			socket.on('data', (chunk) => {
+				data += chunk;
+			});
+			socket.on('end', () => resolve(data));
+			socket.on('error', reject);
+		});
+
+		expect(reply.startsWith('HTTP/1.1 400')).toBe(true);
 	});
 
 	it('asks for a password when one is set', async () => {

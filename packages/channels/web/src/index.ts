@@ -155,7 +155,14 @@ export class WebChannel implements Channel {
 	}
 
 	private async handle(request: IncomingMessage, response: ServerResponse): Promise<void> {
-		const url = new URL(request.url ?? '/', 'http://localhost');
+		let url: URL;
+		try {
+			url = new URL(request.url ?? '/', 'http://localhost');
+		} catch {
+			// A junk request line (curl with a bare "//", a scanner) is not our
+			// problem, but it must not land in the log as a 500.
+			return json(response, 400, { error: 'bad request' });
+		}
 		const cookie = cookies(request);
 
 		if (url.pathname === '/healthz') return json(response, 200, { ok: true });
