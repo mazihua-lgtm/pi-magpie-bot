@@ -4,7 +4,7 @@ import { createServer, type Server } from 'node:http';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { checksumFor, ensureFreeRoute, FREE_GROUP, installMagpie, releaseAsset } from '../src/install.ts';
+import { addProvider, checksumFor, ensureFreeRoute, FREE_GROUP, installMagpie, releaseAsset } from '../src/install.ts';
 
 const scratch: string[] = [];
 const servers: Server[] = [];
@@ -154,5 +154,48 @@ fi
 		expect(logged.join('\n')).toContain('原渠道包下载失败');
 		expect(logged.join('\n')).toContain("trying again without this machine's proxy settings");
 		expect(lines.at(-1)).toBe(`group add ${FREE_GROUP} models=our-free-model/* routing=smart`);
+	});
+});
+
+describe('a key from the first-run page', () => {
+	/** A magpie that refuses keys the way a real one does, and echoes the command line. */
+	const refusingMagpie = async (dir: string) => {
+		const fake = join(dir, 'magpie');
+		await writeFile(
+			fake,
+			`#!/bin/sh
+echo "magpie: 401 Unauthorized: the key $3 is not valid" >&2
+exit 1
+`,
+		);
+		await chmod(fake, 0o755);
+		return fake;
+	};
+
+	it('gives a vendor key to magpie and says nothing when it works', async () => {
+		const dir = await tempDir();
+		const calls = join(dir, 'calls');
+		const fake = join(dir, 'magpie');
+		await writeFile(fake, `#!/bin/sh\necho "$@" >> "${calls}"\n`);
+		await chmod(fake, 0o755);
+
+		await addProvider({ binary: fake, preset: 'deepseek', key: 'sk-good' });
+
+		expect((await readFile(calls, 'utf8')).trim()).toBe('provider add deepseek sk-good');
+	});
+
+	it('repeats magpie\'s refusal without repeating the key', async () => {
+		const dir = await tempDir();
+		const fake = await refusingMagpie(dir);
+
+		const failure = await addProvider({ binary: fake, preset: 'deepseek', key: 'sk-secret-123' }).catch(
+			(error: Error) => error,
+		);
+
+		expect(failure).toBeInstanceOf(Error);
+		const said = (failure as Error).message;
+		expect(said).toContain('refused');
+		expect(said).toContain('401');
+		expect(said).not.toContain('sk-secret-123');
 	});
 });

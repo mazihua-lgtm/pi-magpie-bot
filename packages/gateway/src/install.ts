@@ -156,6 +156,35 @@ export async function ensureFreeRoute(options: FreeRouteOptions): Promise<void> 
 	}
 }
 
+export interface AddProviderOptions {
+	binary: string;
+	/** magpie's name for the vendor, as `magpie presets` lists it. */
+	preset: string;
+	/** The key itself. Never logged, never put in an error message. */
+	key: string;
+}
+
+/**
+ * Registers a vendor key with magpie, so the user's own model is available where
+ * the free pool is not. `execFile`'s failure text starts with the whole command
+ * line, key included, so what comes out of here is magpie's own last word with
+ * the key struck out.
+ */
+export async function addProvider(options: AddProviderOptions): Promise<void> {
+	try {
+		await magpieRun(options.binary, ['provider', 'add', options.preset, options.key], 120_000);
+	} catch (error) {
+		const said = String((error as { stderr?: string }).stderr ?? '')
+			.split('\n')
+			.map((line) => line.trim())
+			.filter(Boolean)
+			.at(-1);
+		throw new Error(
+			said ? `magpie refused that key: ${said.replace(/^magpie:\s*/i, '').replaceAll(options.key, '***')}` : 'magpie refused that key',
+		);
+	}
+}
+
 /**
  * Whether magpie considers the free pool signed in, as it reports itself.
  * `undefined` when the machine is too old to say (no `--json`, no plugin yet):

@@ -62,7 +62,7 @@ magpie plugin login our-free-model
 
 免费池的代价是排队和限制。想稳定、想用大模型，两条路：
 
-**自己的 key** — `magpie provider add deepseek sk-…`（`magpie presets` 看全部厂商），或者打开 `magpie web`（默认 <http://127.0.0.1:3430>）在页面里加。
+**自己的 key** —— 不用开终端：免费池给不出模型时，bot 自己会把「还差一步」的页面挂出来，页面上直接有厂商下拉框和一个 key 输入框，贴进去点「保存并继续」，同一个进程就接着启动、进聊天页。想在聊天里加第二次，或者用命令行，`magpie provider add deepseek sk-…`（`magpie presets` 看全部厂商），或者打开 `magpie web`（默认 <http://127.0.0.1:3430>）在页面里加。
 
 **本地模型** — Ollama / vLLM / LM Studio 起一个 OpenAI 兼容端点，然后：
 

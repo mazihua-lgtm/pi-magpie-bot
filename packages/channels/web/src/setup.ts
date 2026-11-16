@@ -18,6 +18,20 @@ export interface SetupPageOptions {
 	docsUrl?: string;
 	host?: string;
 	port?: number;
+	/**
+	 * The vendors the page offers by name. With these and `onKey` the page also
+	 * takes a key in a text box, which is the whole point: the person most likely
+	 * to see this page is the one who does not want to open a terminal.
+	 */
+	presets?: Array<{ id: string; name: string }>;
+	/** Saves a key, or throws with the reason it could not be saved. */
+	onKey?: (input: { preset: string; key: string }) => Promise<string | undefined>;
+}
+
+/** What a key posted to the page is allowed to look like. */
+export interface KeyForm {
+	preset: string;
+	key: string;
 }
 
 /** Everything a model or a user typed goes through this before it is markup. */
@@ -61,18 +75,77 @@ export function setupPage(options: SetupPageOptions): string {
   .reason { opacity: .75; margin: 0 0 20px; }
   ol { padding-left: 20px; }
   li { margin-bottom: 14px; }
-  code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 14px; background: #8882; padding: 6px 8px; border-radius: 6px; display: inline-block; }
+  code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 14px; background: #8882; padding: 6px 8px; border-radius: 6px; display: inline-block; word-break: break-all; }
   p { margin: 6px 0 0; }
   .docs { opacity: .6; font-size: 14px; margin-top: 24px; }
   a { color: inherit; }
+  form { margin: 0 0 24px; padding: 16px; border: 1px solid #8884; border-radius: 12px; }
+  label { display: block; margin-bottom: 12px; font-size: 14px; opacity: .8; }
+  select, input, button { font: inherit; width: 100%; margin-top: 6px; padding: 9px 10px; border-radius: 8px; border: 1px solid #8886; background: transparent; color: inherit; }
+  button { border: 0; background: #3b82f6; color: #fff; font-weight: 600; }
+  #says { font-size: 14px; min-height: 1.5em; opacity: .8; }
 </style>
 <main>
   <h1>${escape(options.title)}</h1>
   <p class="reason">${escape(options.reason)}</p>
+  ${keyForm(options)}
   <ol>${steps}</ol>
   ${docs}
 </main>
 </html>`;
+}
+
+/** The key box, or nothing when this page was opened without a way to save one. */
+function keyForm(options: SetupPageOptions): string {
+	if (!options.presets?.length || !options.onKey) return '';
+	const choices = options.presets
+		.map((preset) => `<option value="${escape(preset.id)}">${escape(preset.name)}</option>`)
+		.join('');
+	return `<form id="key">
+    <label>自己有 key 的话填在这里，不用开终端
+      <select name="preset">${choices}</select>
+    </label>
+    <label>API key
+      <input name="key" type="password" autocomplete="off" spellcheck="false" required>
+    </label>
+    <button>保存并继续</button>
+    <p id="says"></p>
+  </form>
+  <script>
+    document.getElementById('key').addEventListener('submit', async (event) => {
+      event.preventDefault();
+      const form = event.target;
+      const says = document.getElementById('says');
+      says.textContent = '正在保存…';
+      try {
+        const response = await fetch('/api/setup/key', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ preset: form.preset.value, key: form.key.value }),
+        });
+        const body = await response.json().catch(() => ({}));
+        if (!response.ok) {
+          says.textContent = body.error || '没能保存这个 key。';
+          return;
+        }
+        says.textContent = body.note || '好了，正在启动，等几秒刷新这一页。';
+      } catch (error) {
+        says.textContent = '连不上这个页面了，刷新一下再试。';
+      }
+    });
+  </script>`;
+}
+
+export interface SetupPageHandle {
+	url: string;
+	/**
+	 * Resolves true once the page has taken a key. The page is the last thing
+	 * this process does until then, so whoever is waiting on it gets a signal
+	 * back: fix what was wrong, then look again.
+	 */
+	fixed: Promise<boolean>;
+	/** Stops serving the page, for whoever no longer needs it. */
+	close: () => Promise<void>;
 }
 
 /**
@@ -80,10 +153,15 @@ export function setupPage(options: SetupPageOptions): string {
  * gateway it needs exists, and staying up is what tells the user (and Docker)
  * that this is the state the product is in.
  */
-export async function serveSetupPage(options: SetupPageOptions): Promise<string> {
+export async function serveSetupPage(options: SetupPageOptions): Promise<SetupPageHandle> {
 	const host = options.host ?? '127.0.0.1';
 	const port = options.port ?? 8787;
 	const page = setupPage(options);
+	let settle: (value: boolean) => void = () => {};
+	const fixed = new Promise<boolean>((resolve) => {
+		settle = resolve;
+	});
+
 	const server = createServer((request: IncomingMessage, response: ServerResponse) => {
 		const path = (request.url ?? '/').split('?')[0];
 		if (path === '/healthz') {
@@ -91,11 +169,79 @@ export async function serveSetupPage(options: SetupPageOptions): Promise<string>
 			response.end('{"ok":false,"reason":"no model"}');
 			return;
 		}
+		if (path === '/api/setup/key' && request.method === 'POST') {
+			void saveKey(request, response, options).then((accepted) => {
+				if (!accepted) return;
+				// The chat server wants this same port, so the page gives it up.
+				// The promise resolves only once the port is really free again:
+				// resolving first is a race the chat server loses.
+				server.close(() => settle(true));
+				server.closeIdleConnections();
+			});
+			return;
+		}
 		response.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
 		response.end(page);
 	});
+	// A browser tab keeps its socket open; that socket must not be able to hold
+	// the port this page is about to hand over.
+	server.keepAliveTimeout = 500;
 	await new Promise<void>((resolve) => server.listen(port, host, resolve));
 	const address = server.address();
 	const shown = typeof address === 'object' && address ? address.port : port;
-	return `http://${host === '0.0.0.0' ? '127.0.0.1' : host}:${shown}`;
+	return {
+		url: `http://${host === '0.0.0.0' ? '127.0.0.1' : host}:${shown}`,
+		fixed,
+		close: () => new Promise<void>((resolve) => server.close(() => resolve())),
+	};
+}
+
+/** Reads one key off the page and hands it over. Nothing here says the key back. */
+async function saveKey(
+	request: IncomingMessage,
+	response: ServerResponse,
+	options: SetupPageOptions,
+): Promise<boolean> {
+	const say = (status: number, body: Record<string, unknown>): boolean => {
+		response.writeHead(status, { 'content-type': 'application/json; charset=utf-8' });
+		response.end(JSON.stringify(body));
+		return status === 200;
+	};
+	if (!options.onKey) return say(400, { error: '这一页不能收 key，请按下面的命令做。' });
+
+	let form: Partial<KeyForm>;
+	try {
+		form = JSON.parse(await readBody(request)) as Partial<KeyForm>;
+	} catch {
+		return say(400, { error: '请求看不懂，刷新一下再试。' });
+	}
+	const preset = typeof form.preset === 'string' ? form.preset : '';
+	const key = typeof form.key === 'string' ? form.key.trim() : '';
+	if (!key) return say(400, { error: 'key 不能是空的。' });
+	if (!options.presets?.some((entry) => entry.id === preset)) {
+		return say(400, { error: '没有这个厂商，换一个或者用下面的命令。' });
+	}
+
+	try {
+		const note = await options.onKey({ preset, key });
+		return say(200, { ok: true, note: note ?? '加进去了，正在启动，等几秒刷新这一页。' });
+	} catch (error) {
+		// A failed save must not hand the key back out in its own message.
+		const said = ((error instanceof Error ? error.message : String(error)).split('\n')[0] ?? '').replaceAll(key, '***');
+		console.error('[setup] a key did not save:', said);
+		return say(400, { error: said });
+	}
+}
+
+/** A key is a few dozen bytes; anything far larger is not this form. */
+async function readBody(request: IncomingMessage, limit = 8192): Promise<string> {
+	const chunks: Buffer[] = [];
+	let size = 0;
+	for await (const chunk of request) {
+		const buffer = chunk as Buffer;
+		size += buffer.length;
+		if (size > limit) throw new Error('too large');
+		chunks.push(buffer);
+	}
+	return Buffer.concat(chunks).toString('utf8');
 }

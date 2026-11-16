@@ -12,6 +12,7 @@ import { Bot } from '@pi-magpie-bot/brain';
 import { TelegramChannel } from '@pi-magpie-bot/channel-telegram';
 import { serveSetupPage, type SetupPageOptions, WebChannel } from '@pi-magpie-bot/channel-web';
 import {
+	addProvider,
 	ensureFreeRoute,
 	ensureGateway,
 	findMagpieBinary,
@@ -73,29 +74,59 @@ async function magpieBinary(): Promise<string | undefined> {
 }
 
 /**
+ * The vendors the first-run page names. Short on purpose: someone with a vendor
+ * this list misses still has the command underneath it, and a wall of twenty
+ * choices is what the page is trying to spare them.
+ */
+const VENDORS = [
+	{ id: 'deepseek', name: 'DeepSeek' },
+	{ id: 'moonshot-cn', name: 'Kimi（国内站）' },
+	{ id: 'zhipu', name: '智谱 GLM' },
+	{ id: 'qwen-cn', name: '通义千问（国内站）' },
+	{ id: 'openai', name: 'OpenAI' },
+	{ id: 'anthropic', name: 'Anthropic' },
+	{ id: 'google', name: 'Google Gemini' },
+	{ id: 'xai', name: 'xAI' },
+];
+
+/** Saves the key the first-run page took. It never comes back out of here. */
+async function saveKey(input: { preset: string; key: string }): Promise<string> {
+	const binary = findMagpieBinary(env, [join(ourBinDir, 'magpie')]) ?? (await magpieBinary());
+	if (!binary) throw new Error('这台机器上没有 magpie，先跑一次 ./install.sh 再试。');
+	await addProvider({ binary, preset: input.preset, key: input.key });
+	return '加进 magpie 了，正在启动，等几秒刷新这一页。';
+}
+
+/**
  * A setup step that only a person can take is a state, not a crash: the reason
  * goes to the terminal and to a page, and the process stays up. Under
  * `docker compose` the alternative is a container restarting forever with the
- * answer buried in its log. Never returns.
+ * answer buried in its log. It comes back only when the page took a key.
  */
-async function needsSetup(options: SetupPageOptions & { console?: string[] }): Promise<never> {
+async function needsSetup(options: SetupPageOptions & { console?: string[] }): Promise<'retry'> {
 	const { console: lines = [], ...page } = options;
 	for (const line of lines) console.error(`[bot] ${line}`);
 	if (env.WEB_PORT === '0') process.exit(1);
-	const url = await serveSetupPage({
+	const { url, fixed } = await serveSetupPage({
 		...page,
+		presets: VENDORS,
+		onKey: saveKey,
 		host: env.WEB_HOST ?? '127.0.0.1',
 		port: Number(env.WEB_PORT ?? 8787),
 	});
 	console.error(`[bot] a page saying this is at ${url}`);
-	return await new Promise<never>(() => {});
+	await fixed;
+	return 'retry';
 }
+
+/** What the startup model check ended up with, or a word that the page fixed it. */
+type Look = { ids: string[]; binary?: string } | 'retry';
 
 /**
  * A gateway that is down is started or waited for; one that answers with a
  * refusal is not down at all, so send the user to the key instead of a timeout.
  */
-async function models(): Promise<{ ids: string[]; binary?: string }> {
+async function models(): Promise<Look> {
 	try {
 		return { ids: (await listModels(config)).map((model) => model.id) };
 	} catch (error) {
@@ -138,35 +169,44 @@ async function models(): Promise<{ ids: string[]; binary?: string }> {
 	}
 }
 
-const reachable = await models();
-let ids = reachable.ids;
+/**
+ * Everything that has to be true before the bot can open: a gateway that
+ * answers, a model this bot is allowed to use, and — when the pool gives
+ * nothing — a page that takes a key instead of commands. `'retry'` means the
+ * page took one, so the check is worth running again against the new pool.
+ */
+async function startupModels(): Promise<Look> {
+	const reachable = await models();
+	if (reachable === 'retry') return 'retry';
+	let ids = reachable.ids;
 
-// A gateway someone else started (Homebrew, a desktop app) has no routing
-// groups either. Same two commands, run here; a gateway already filled with
-// the user's own models is left alone.
-const missesFree = wantsFree ? !ids.includes(wanted) : ids.length === 0;
-if (missesFree && env.MAGPIE_START !== '0') {
-	const tool = reachable.binary ?? findMagpieBinary(env, [join(ourBinDir, 'magpie')]);
-	if (tool) {
-		await ensureFreeRoute({ binary: tool, log });
-		ids = (await listModels(config)).map((model) => model.id);
+	// A gateway someone else started (Homebrew, a desktop app) has no routing
+	// groups either. Same two commands, run here; a gateway already filled with
+	// the user's own models is left alone.
+	const missesFree = wantsFree ? !ids.includes(wanted) : ids.length === 0;
+	if (missesFree && env.MAGPIE_START !== '0') {
+		const tool = reachable.binary ?? findMagpieBinary(env, [join(ourBinDir, 'magpie')]);
+		if (tool) {
+			await ensureFreeRoute({ binary: tool, log });
+			ids = (await listModels(config)).map((model) => model.id);
+		}
 	}
-}
 
-// No model is a first-run state, not a crash: say what is missing, and keep a
-// page up saying it, because whoever started this from a compose file has no
-// terminal to read.
-const modelOk = wanted ? ids.includes(wanted) : ids.length > 0;
-if (!modelOk) {
+	// No model is a first-run state, not a crash: say what is missing, and keep a
+	// page up saying it, because whoever started this from a compose file has no
+	// terminal to read.
+	const modelOk = wanted ? ids.includes(wanted) : ids.length > 0;
+	if (modelOk) return { ids, binary: reachable.binary };
+
 	// The anonymous pool signs itself up, so getting nothing back means the
 	// upstream gave nothing to this address: out of quota, or it wants a channel
 	// added through its console — the one step a person has to do.
 	const poolEmpty = !ids.some((id) => id.startsWith(FREE_MODEL_PREFIX));
-	await needsSetup({
+	return await needsSetup({
 		title: '还不能聊天：magpie 里没有能用的模型',
 		reason: poolEmpty
-			? '免费池这次没给出模型：要么这个网络地址的额度用完了，要么要在它的控制台里接一个渠道。也可以直接填自己的 key。'
-			: '网关里现在没有这个模型。',
+			? '免费池这次没给出模型：要么这个网络地址的额度用完了，要么要在它的控制台里接一个渠道。自己有 key 的话，填在下面就行。'
+			: '网关里现在没有这个模型。自己有 key 的话，填在下面就行。',
 		steps: poolEmpty
 			? [
 					{
@@ -197,6 +237,17 @@ if (!modelOk) {
 			`available now: ${ids.slice(0, 12).join(', ') || '(nothing)'}${ids.length > 12 ? ', …' : ''}`,
 		],
 	});
+}
+
+// The page can fix this without a restart, so it is allowed to answer more than
+// once; three tries is enough for a key that turns out not to work.
+let reachable: Look = 'retry';
+for (let attempt = 0; attempt < 3 && reachable === 'retry'; attempt += 1) {
+	reachable = await startupModels();
+}
+if (reachable === 'retry') {
+	console.error('[bot] no model even after a key was saved; stopping');
+	process.exit(1);
 }
 
 const bot = await Bot.open({

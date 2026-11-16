@@ -1,5 +1,6 @@
 export { gatewayConfig, healthcheck, listModels, type GatewayConfig, type MagpieModel } from './config.ts';
 export {
+	addProvider,
 	checksumFor,
 	ensureFreeRoute,
 	FREE_GROUP,

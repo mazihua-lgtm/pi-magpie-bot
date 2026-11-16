@@ -2,7 +2,7 @@ import { createHmac, randomBytes, randomUUID, timingSafeEqual } from 'node:crypt
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import type { Channel, MessageEvent } from '@pi-magpie-bot/brain';
 import { LOGIN_PAGE, PAGE } from './page.ts';
-export { serveSetupPage, setupPage, type SetupPageOptions } from './setup.ts';
+export { serveSetupPage, setupPage, type SetupPageHandle, type SetupPageOptions } from './setup.ts';
 
 export interface WebChannelOptions {
 	/** Default 8787; 0 picks a free port (tests). */

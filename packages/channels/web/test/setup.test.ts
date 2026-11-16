@@ -1,13 +1,22 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { serveSetupPage, setupPage } from '../src/setup.ts';
 
-const urls: string[] = [];
-const servers: Array<{ close: (callback: () => void) => void }> = [];
+const servers: Array<{ close: () => Promise<void> }> = [];
 
 afterEach(async () => {
-	for (const server of servers.splice(0)) await new Promise<void>((resolve) => server.close(() => resolve()));
-	urls.length = 0;
+	for (const server of servers.splice(0)) await server.close();
 });
+
+const serve = async (options: Parameters<typeof serveSetupPage>[0]) => {
+	const handle = await serveSetupPage({ ...options, port: 0 });
+	servers.push(handle);
+	return handle;
+};
+
+const VENDORS = [
+	{ id: 'deepseek', name: 'DeepSeek' },
+	{ id: 'openai', name: 'OpenAI' },
+];
 
 describe('the first-run page', () => {
 	it('says the commands that fix it, in order', () => {
@@ -32,8 +41,7 @@ describe('the first-run page', () => {
 	});
 
 	it('stays up and answers, so an orchestrated container can see why', async () => {
-		const url = await serveSetupPage({ title: '还不能聊天', reason: '没有模型', steps: [], port: 0 });
-		urls.push(url);
+		const { url } = await serve({ title: '还不能聊天', reason: '没有模型', steps: [] });
 
 		const page = await fetch(url);
 		expect(page.status).toBe(200);
@@ -42,5 +50,83 @@ describe('the first-run page', () => {
 		const health = await fetch(`${url}/healthz`);
 		expect(health.status).toBe(200);
 		expect(await health.json()).toEqual({ ok: false, reason: 'no model' });
+	});
+});
+
+describe('the key box', () => {
+	it('is left out when there is nowhere to save a key', () => {
+		const page = setupPage({ title: '还不能聊天', reason: '没有模型', steps: [], presets: VENDORS });
+		expect(page).not.toContain('name="key"');
+	});
+
+	it('takes a key, saves it, and lets the caller look again', async () => {
+		const saved: Array<{ preset: string; key: string }> = [];
+		const { url, fixed } = await serve({
+			title: '还不能聊天',
+			reason: '没有模型',
+			steps: [],
+			presets: VENDORS,
+			onKey: async (input) => {
+				saved.push(input);
+				return undefined;
+			},
+		});
+		expect(await (await fetch(url)).text()).toContain('name="key"');
+
+		const response = await fetch(`${url}/api/setup/key`, {
+			method: 'POST',
+			headers: { 'content-type': 'application/json' },
+			body: JSON.stringify({ preset: 'deepseek', key: ' sk-test-123 ' }),
+		});
+
+		expect(response.status).toBe(200);
+		expect(await response.json()).toEqual({ ok: true, note: '加进去了，正在启动，等几秒刷新这一页。' });
+		expect(saved).toEqual([{ preset: 'deepseek', key: 'sk-test-123' }]);
+		expect(await fixed).toBe(true);
+	});
+
+	it('says what magpie said, and never the key, when a key is refused', async () => {
+		const { url, fixed } = await serve({
+			title: '还不能聊天',
+			reason: '没有模型',
+			steps: [],
+			presets: VENDORS,
+			onKey: async ({ key }) => {
+				throw new Error(`magpie refused that key: sk-not-real (${key})`);
+			},
+		});
+
+		const response = await fetch(`${url}/api/setup/key`, {
+			method: 'POST',
+			headers: { 'content-type': 'application/json' },
+			body: JSON.stringify({ preset: 'openai', key: 'sk-not-real' }),
+		});
+
+		expect(response.status).toBe(400);
+		const body = (await response.json()) as { error: string };
+		expect(body.error).toContain('refused');
+		expect(body.error).not.toContain('sk-not-real');
+		// The page is still up: a wrong key is answered, not a crash.
+		expect((await fetch(url)).status).toBe(200);
+		void fixed;
+	});
+
+	it('refuses a vendor it does not offer, and an empty key', async () => {
+		const { url } = await serve({
+			title: '还不能聊天',
+			reason: '没有模型',
+			steps: [],
+			presets: VENDORS,
+			onKey: async () => undefined,
+		});
+		const post = (body: unknown) =>
+			fetch(`${url}/api/setup/key`, {
+				method: 'POST',
+				headers: { 'content-type': 'application/json' },
+				body: JSON.stringify(body),
+			});
+
+		expect((await post({ preset: 'nope', key: 'sk-1' })).status).toBe(400);
+		expect((await post({ preset: 'deepseek', key: '   ' })).status).toBe(400);
 	});
 });
