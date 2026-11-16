@@ -69,6 +69,11 @@ The terminal prints an address — `127.0.0.1` on your own machine, a temporary 
 one on a server (neither needs an account). Open it, follow the page, restart the bot. It works
 without this too.
 
+On its first install the plugin fetches its own channel pack from `raw.githubusercontent.com`.
+On a network that cannot reach it the free pool does not come up, and both the install script and
+the web page say exactly that (`原渠道包下载失败`) instead of pretending it worked — there, use your
+own model.
+
 ### Telegram
 
 1. Find **@BotFather** in Telegram, `/newbot`, pick a name, keep the token.

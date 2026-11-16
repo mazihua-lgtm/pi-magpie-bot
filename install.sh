@@ -143,10 +143,17 @@ if [ "$MANAGE_MAGPIE" = 1 ] && [ -n "$MAGPIE_BIN" ]; then
 		# Its one question has two answers; the first is the one that hands the
 		# gateway its models with no browser involved. stdin is fed twice on
 		# purpose: a second try needs its own answer.
-		if ! printf '1\n' | "$MAGPIE_BIN" plugin login our-free-model 2>/dev/null; then
-			printf '1\n' | env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY "$MAGPIE_BIN" plugin login our-free-model 2>/dev/null ||
-				warn "the sign-in did not finish; free models may not appear until it does"
+		#
+		# What it says when it fails is the only thing that tells the two very
+		# different failures apart — an address whose quota is used up, and a
+		# network that cannot fetch the pool's channel pack — so it is kept and
+		# repeated rather than swallowed.
+		SIGNIN="$(mktemp)"
+		if ! printf '1\n' | "$MAGPIE_BIN" plugin login our-free-model >"$SIGNIN" 2>&1; then
+			printf '1\n' | env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY "$MAGPIE_BIN" plugin login our-free-model >"$SIGNIN" 2>&1 ||
+				warn "the sign-in did not finish: $(grep -v '^[[:space:]]*$' "$SIGNIN" | tail -n 1)"
 		fi
+		rm -f "$SIGNIN"
 
 		say "starting magpie (log: $LOG)"
 		(env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY nohup "$MAGPIE_BIN" serve >"$LOG" 2>&1 &)

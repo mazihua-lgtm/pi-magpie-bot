@@ -52,6 +52,8 @@ magpie plugin login our-free-model
 
 先停掉 magpie 再运行（它要问运行中的网关要管理页，会被拒）。终端会打印一个地址——本机是 `127.0.0.1` 上的页面，服务器上是临时的 `trycloudflare.com` 地址（都不用注册）；打开它按页面提示接渠道，然后重新启动 bot。不接也能用。
 
+插件第一次安装要从 `raw.githubusercontent.com` 取它自己的渠道包。那个地址连不上的网络里免费池起不来，安装脚本和网页都会直说原因（`原渠道包下载失败`），不会假装装好了——这种网络下请直接用自己的模型。
+
 ### 接到 Telegram
 
 1. 在 Telegram 里找 **@BotFather**，`/newbot`，起个名字，拿到一串 token。
