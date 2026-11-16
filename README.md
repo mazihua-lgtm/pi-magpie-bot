@@ -143,6 +143,8 @@ Telegram / 网页 ──▶ inbox（去重、排队）──▶ pi-durable 会�
                         └── schedules ─────────┘   （定时任务）
 ```
 
+数据怎么落、五件事各自归谁、断电重启后哪条消息会重来哪条不会：**[docs/architecture.md](docs/architecture.md)**。
+
 ## 已知的边界 / Honest limits
 
 - 免费池**按 IP 限量**，忙的时候会排队或失败；`group/free` 会自动换下一个模型，但它不能变出额度。
