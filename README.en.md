@@ -9,13 +9,13 @@
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue" alt="MIT"></a>
   <a href="https://github.com/mazihua-lgtm/pi-magpie-bot/releases"><img src="https://img.shields.io/github/v/release/mazihua-lgtm/pi-magpie-bot" alt="release"></a>
   <img src="https://img.shields.io/badge/node-%E2%89%A524-339933" alt="node 24+">
-  <img src="https://img.shields.io/badge/Telegram%20%C2%B7%20Feishu%20%C2%B7%20Web-channels-5b8def" alt="channels">
+  <img src="https://img.shields.io/badge/Telegram%20%C2%B7%20Feishu%20%C2%B7%20WeCom%20%C2%B7%20Web-channels-5b8def" alt="channels">
 </p>
 
-<p align="center"><a href="README.md">中文</a> · <b>English</b> · <a href="#quick-start">Quick start</a> · <a href="#telegram">Telegram</a> · <a href="#feishu--lark">Feishu</a> · <a href="docs/architecture.md">Architecture</a> · <a href="docs/own-models.md">Own models</a></p>
+<p align="center"><a href="README.md">中文</a> · <b>English</b> · <a href="#quick-start">Quick start</a> · <a href="#telegram">Telegram</a> · <a href="#feishu--lark">Feishu</a> · <a href="#wecom-企业微信">WeCom</a> · <a href="docs/architecture.md">Architecture</a> · <a href="docs/own-models.md">Own models</a></p>
 
 **An always-on personal assistant you run yourself.** It remembers things, keeps reminders across
-restarts, and talks to you in a browser, on Telegram or on Feishu / Lark. It speaks through free
+restarts, and talks to you in a browser, on Telegram, on Feishu / Lark or on WeCom. It speaks through free
 models out of the box: no account, no API key, no bill.
 
 ```
@@ -111,6 +111,20 @@ No public address needed (it uses the official long connection).
 Private chats only; groups are ignored. As with Telegram, the first person to talk to it becomes the
 owner. Text messages only for now.
 
+### WeCom (企业微信)
+
+No public address needed (official long connection). **This is WeCom, not personal WeChat**: only
+people inside your WeCom organisation can reach it.
+
+1. In the WeCom admin console go to Security & Management → Management Tools → Smart Bot, create
+   one in API mode with the long connection, and copy its Bot ID and Secret.
+2. Put them in `.env` as `WECOM_BOT_ID` and `WECOM_BOT_SECRET`, run `pnpm start`, wait for
+   `[wecom] connected`, then message the bot in a private chat.
+
+Private chats only; groups are ignored. The first person to talk to it becomes the owner. Text and
+voice (the platform's own transcript) are understood; images and files get a polite "not supported".
+Not yet verified against a real bot, so please open an issue if it misbehaves.
+
 ## Bring your own model
 
 The free pool queues and has limits. For something steady, or a bigger model, there are two ways:
@@ -184,6 +198,7 @@ Only the web port is exposed; magpie stays on the internal network. It is publis
 | Web | `pnpm start` | a built-in HTTP server, no external dependency |
 | Telegram | a token in `.env` | long polling, no public IP needed |
 | Feishu / Lark | App ID and Secret in `.env` | the official long connection, no public IP needed |
+| WeCom | Bot ID and Secret in `.env` | the official long connection, no public IP needed; not personal WeChat |
 
 ## Configuration
 
@@ -202,6 +217,7 @@ Only the web port is exposed; magpie stays on the internal network. It is publis
 | `TELEGRAM_BOT_TOKEN` | empty | set it and Telegram is connected |
 | `FEISHU_APP_ID` / `FEISHU_APP_SECRET` | empty | set both and Feishu is connected |
 | `FEISHU_DOMAIN` | `feishu` | `lark` for international Lark |
+| `WECOM_BOT_ID` / `WECOM_BOT_SECRET` | empty | set both and WeCom is connected |
 | `WORKSPACE_DIR` | empty | only with it can the bot read files and run commands (each one approved) |
 | `ALLOWED_USERS` | empty | who else may talk to it, besides the owner |
 
@@ -221,7 +237,7 @@ exists:
   is this project's own, about three thousand lines across `packages/*/src`, short enough to read.
 
 ```
-Telegram / Feishu / web ──▶ inbox (dedupe, queue) ──▶ pi-durable session ──▶ outbox ──▶ you
+Telegram / Feishu / WeCom / web ──▶ inbox (dedupe, queue) ──▶ pi-durable session ──▶ outbox ──▶ you
                      ▲                            │
                      └────── schedules ───────────┘   (reminders)
 ```
@@ -261,7 +277,7 @@ pnpm smoke:bot     # run the whole chain without a chat platform
 ```
 
 Packages: `packages/gateway` (models), `packages/events` (host tables), `packages/memory`
-(memory files), `packages/brain` (sessions and tools), `packages/channels/*` (Telegram, Feishu, web),
+(memory files), `packages/brain` (sessions and tools), `packages/channels/*` (Telegram, Feishu, WeCom, web),
 `apps/bot` (the entry point).
 
 ## License

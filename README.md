@@ -9,12 +9,12 @@
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue" alt="MIT"></a>
   <a href="https://github.com/mazihua-lgtm/pi-magpie-bot/releases"><img src="https://img.shields.io/github/v/release/mazihua-lgtm/pi-magpie-bot" alt="release"></a>
   <img src="https://img.shields.io/badge/node-%E2%89%A524-339933" alt="node 24+">
-  <img src="https://img.shields.io/badge/Telegram%20%C2%B7%20Feishu%20%C2%B7%20Web-channels-5b8def" alt="channels">
+  <img src="https://img.shields.io/badge/Telegram%20%C2%B7%20Feishu%20%C2%B7%20WeCom%20%C2%B7%20Web-channels-5b8def" alt="channels">
 </p>
 
-<p align="center">中文 · <b><a href="README.en.md">English</a></b> · <a href="#快速开始--quick-start">快速开始</a> · <a href="#接到-telegram">Telegram</a> · <a href="#接到飞书">飞书</a> · <a href="docs/architecture.md">架构</a> · <a href="docs/own-models.md">自带模型</a></p>
+<p align="center">中文 · <b><a href="README.en.md">English</a></b> · <a href="#快速开始--quick-start">快速开始</a> · <a href="#接到-telegram">Telegram</a> · <a href="#接到飞书">飞书</a> · <a href="#接到企业微信">企业微信</a> · <a href="docs/architecture.md">架构</a> · <a href="docs/own-models.md">自带模型</a></p>
 
-**一个一直在线、会记事、会提醒你的私人助理。** 跑在你自己的电脑或服务器上，用免费模型就能开口说话：不用注册账号，不用 API key。在浏览器、Telegram、飞书里都能找到它。
+**一个一直在线、会记事、会提醒你的私人助理。** 跑在你自己的电脑或服务器上，用免费模型就能开口说话：不用注册账号，不用 API key。在浏览器、Telegram、飞书、企业微信里都能找到它。
 
 > An always-on personal assistant you run yourself: memory, reminders, free models out of the box (no account, no API key).
 
@@ -84,6 +84,15 @@ magpie plugin login our-free-model
 
 只回单聊，群聊忽略；和 Telegram 一样，第一个跟它说话的人成为主人。目前只看得懂文字消息。
 
+### 接到企业微信
+
+不需要公网地址（用官方长连接）。**这是企业微信，不是个人微信**：只有你企业微信里的同事/自己能找到它。
+
+1. 企业微信管理后台 →「安全与管理」→「管理工具」→「智能机器人」→ 创建，选「API 模式」→「长连接」，拿到 Bot ID 和 Secret。
+2. 把它们填到 `.env` 的 `WECOM_BOT_ID`、`WECOM_BOT_SECRET`，`pnpm start`，看到 `[wecom] connected` 就是通了，在企业微信里给机器人发单聊消息。
+
+只回单聊，群聊忽略；第一个跟它说话的人成为主人。看得懂文字和语音（用平台自己的转写），图片文件会提示不支持。还没拿真实机器人验证过，遇到问题请提 issue。
+
 ## 进阶：用你自己的模型 / Bring your own model
 
 免费池的代价是排队和限制。想稳定、想用大模型，两条路：
@@ -141,6 +150,7 @@ magpie 容器是「别人家的网关」，第一次起会要一把自己的 key
 | 网页 | `pnpm start` | 内置 HTTP 服务，无外部依赖 |
 | Telegram | `.env` 填 token | 长轮询，不需要公网 IP |
 | 飞书 / Lark | `.env` 填 App ID 和 Secret | 官方长连接，不需要公网 IP |
+| 企业微信 | `.env` 填 Bot ID 和 Secret | 官方长连接，不需要公网 IP；不是个人微信 |
 
 ## 配置 / Configuration
 
@@ -159,6 +169,7 @@ magpie 容器是「别人家的网关」，第一次起会要一把自己的 key
 | `TELEGRAM_BOT_TOKEN` | 空 | 填了就接 Telegram |
 | `FEISHU_APP_ID` / `FEISHU_APP_SECRET` | 空 | 两个都填了就接飞书 |
 | `FEISHU_DOMAIN` | `feishu` | 国际版 Lark 填 `lark` |
+| `WECOM_BOT_ID` / `WECOM_BOT_SECRET` | 空 | 两个都填了就接企业微信 |
 | `WORKSPACE_DIR` | 空 | 设了才允许读写文件、执行命令（每次要审批） |
 | `ALLOWED_USERS` | 空 | 除主人外还允许谁说话 |
 
@@ -172,7 +183,7 @@ magpie 容器是「别人家的网关」，第一次起会要一把自己的 key
 - 上层这层薄薄的胶水（收件箱、发件箱、定时表、审批表、记忆目录、频道适配）是这个项目自己的，`packages/*/src` 加起来三千行上下，看得完。
 
 ```
-Telegram / 飞书 / 网页 ──▶ inbox（去重、排队）──▶ pi-durable 会话 ──▶ outbox ──▶ 你
+Telegram / 飞书 / 企业微信 / 网页 ──▶ inbox（去重、排队）──▶ pi-durable 会话 ──▶ outbox ──▶ 你
                         ▲                      │
                         └── schedules ─────────┘   （定时任务）
 ```
@@ -201,7 +212,7 @@ pnpm smoke         # 直接问一遍网关里的第一个模型
 pnpm smoke:bot     # 不用聊天平台，跑一遍完整链路
 ```
 
-目录：`packages/gateway`（模型）、`packages/events`（宿主表）、`packages/memory`（记忆文件）、`packages/brain`（会话与工具）、`packages/channels/*`（Telegram、飞书、网页）、`apps/bot`（入口）。
+目录：`packages/gateway`（模型）、`packages/events`（宿主表）、`packages/memory`（记忆文件）、`packages/brain`（会话与工具）、`packages/channels/*`（Telegram、飞书、企业微信、网页）、`apps/bot`（入口）。
 
 ## 许可 / License
 

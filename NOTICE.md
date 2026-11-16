@@ -34,6 +34,13 @@ notices are carried by their own distributions.
 - Used for: the Feishu / Lark channel (long-connection events and sending
   messages). Installed from npm, not vendored.
 
+## @wecom/aibot-node-sdk
+
+- Source: https://github.com/WecomTeam/aibot-node-sdk
+- License: MIT
+- Used for: the WeCom (企业微信) channel (long-connection messages and
+  sending). Installed from npm, not vendored.
+
 ## Design references (no code taken)
 
 - https://github.com/NousResearch/hermes-agent (MIT)

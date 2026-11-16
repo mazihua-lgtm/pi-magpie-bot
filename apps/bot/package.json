@@ -11,6 +11,7 @@
 		"@pi-magpie-bot/brain": "workspace:*",
 		"@pi-magpie-bot/channel-feishu": "workspace:*",
 		"@pi-magpie-bot/channel-telegram": "workspace:*",
+		"@pi-magpie-bot/channel-wecom": "workspace:*",
 		"@pi-magpie-bot/channel-web": "workspace:*",
 		"@pi-magpie-bot/events": "workspace:*",
 		"@pi-magpie-bot/gateway": "workspace:*"

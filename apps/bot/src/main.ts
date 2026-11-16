@@ -11,6 +11,7 @@ import { join, resolve } from 'node:path';
 import { Bot } from '@pi-magpie-bot/brain';
 import { FeishuChannel } from '@pi-magpie-bot/channel-feishu';
 import { TelegramChannel } from '@pi-magpie-bot/channel-telegram';
+import { WecomChannel } from '@pi-magpie-bot/channel-wecom';
 import { serveSetupPage, type SetupPageOptions, WebChannel } from '@pi-magpie-bot/channel-web';
 import {
 	addProvider,
@@ -311,6 +312,26 @@ if (feishuId && feishuSecret) {
 	console.warn('[bot] feishu needs both FEISHU_APP_ID and FEISHU_APP_SECRET, so it is off');
 }
 
+const wecomId = env.WECOM_BOT_ID?.trim();
+const wecomSecret = env.WECOM_BOT_SECRET?.trim();
+if (wecomId && wecomSecret) {
+	const wecom = new WecomChannel({
+		botId: wecomId,
+		secret: wecomSecret,
+		owners,
+		onMessage: (event) => {
+			bot.ingest(event);
+		},
+	});
+	bot.register(wecom);
+	wecom.start();
+	shutdown.push(() => wecom.stop());
+	// Whether it really connected is said by the channel itself ("[wecom] connected").
+	console.log('[bot] wecom is starting');
+} else if (wecomId || wecomSecret) {
+	console.warn('[bot] wecom needs both WECOM_BOT_ID and WECOM_BOT_SECRET, so it is off');
+}
+
 if (!webDisabled) {
 	const webHost = env.WEB_HOST ?? '127.0.0.1';
 	if (!env.WEB_PASSWORD && !['127.0.0.1', 'localhost', '::1'].includes(webHost)) {
@@ -335,7 +356,7 @@ if (!webDisabled) {
 }
 
 if (shutdown.length === 0) {
-	console.error('[bot] nothing to talk to: set TELEGRAM_BOT_TOKEN, FEISHU_APP_ID and FEISHU_APP_SECRET, or leave WEB_PORT on');
+	console.error('[bot] nothing to talk to: set TELEGRAM_BOT_TOKEN, FEISHU_APP_ID and FEISHU_APP_SECRET, WECOM_BOT_ID and WECOM_BOT_SECRET, or leave WEB_PORT on');
 	await bot.close();
 	process.exit(1);
 }
