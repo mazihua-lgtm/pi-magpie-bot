@@ -23,7 +23,14 @@ export interface SetupPageOptions {
 	 * takes a key in a text box, which is the whole point: the person most likely
 	 * to see this page is the one who does not want to open a terminal.
 	 */
-	presets?: Array<{ id: string; name: string }>;
+	presets?: Array<{
+		id: string;
+		name: string;
+		/** Where to get a key from this vendor; shown as a link under the box. */
+		signup?: string;
+		/** True when that link earns the project something: the page says so. */
+		sponsored?: boolean;
+	}>;
 	/** Saves a key, or throws with the reason it could not be saved. */
 	onKey?: (input: { preset: string; key: string }) => Promise<string | undefined>;
 }
@@ -81,30 +88,42 @@ export function setupPage(options: SetupPageOptions): string {
   a { color: inherit; }
   form { margin: 0 0 24px; padding: 16px; border: 1px solid #8884; border-radius: 12px; }
   label { display: block; margin-bottom: 12px; font-size: 14px; opacity: .8; }
-  select, input, button { font: inherit; width: 100%; margin-top: 6px; padding: 9px 10px; border-radius: 8px; border: 1px solid #8886; background: transparent; color: inherit; }
+  select, input, button { box-sizing: border-box; font: inherit; width: 100%; margin-top: 6px; padding: 9px 10px; border-radius: 8px; border: 1px solid #8886; background: transparent; color: inherit; }
   button { border: 0; background: #3b82f6; color: #fff; font-weight: 600; }
+  .signup { font-size: 14px; margin: 0 0 12px; }
+  details { margin-top: 8px; }
+  summary { cursor: pointer; opacity: .7; font-size: 14px; }
   #says { font-size: 14px; min-height: 1.5em; opacity: .8; }
 </style>
 <main>
   <h1>${escape(options.title)}</h1>
   <p class="reason">${escape(options.reason)}</p>
   ${keyForm(options)}
-  <ol>${steps}</ol>
+  ${hasForm(options) ? `<details><summary>习惯用终端？也可以按命令做</summary><ol>${steps}</ol></details>` : `<ol>${steps}</ol>`}
   ${docs}
 </main>
 </html>`;
 }
 
+function hasForm(options: SetupPageOptions): boolean {
+	return Boolean(options.presets?.length && options.onKey);
+}
+
 /** The key box, or nothing when this page was opened without a way to save one. */
 function keyForm(options: SetupPageOptions): string {
-	if (!options.presets?.length || !options.onKey) return '';
-	const choices = options.presets
-		.map((preset) => `<option value="${escape(preset.id)}">${escape(preset.name)}</option>`)
+	if (!hasForm(options)) return '';
+	const choices = (options.presets ?? [])
+		.map((preset) => {
+			// Only a plain https link goes into the page.
+			const signup = preset.signup?.startsWith('https://') ? preset.signup : '';
+			return `<option value="${escape(preset.id)}" data-signup="${escape(signup)}"${preset.sponsored ? ' data-sponsored="1"' : ''}>${escape(preset.name)}</option>`;
+		})
 		.join('');
 	return `<form id="key">
     <label>自己有 key 的话填在这里，不用开终端
       <select name="preset">${choices}</select>
     </label>
+    <p id="signup" class="signup"></p>
     <label>API key
       <input name="key" type="password" autocomplete="off" spellcheck="false" required>
     </label>
@@ -112,6 +131,24 @@ function keyForm(options: SetupPageOptions): string {
     <p id="says"></p>
   </form>
   <script>
+    const picker = document.querySelector('#key select');
+    const signup = document.getElementById('signup');
+    function showSignup() {
+      const chosen = picker.selectedOptions[0];
+      const url = chosen && chosen.dataset.signup;
+      signup.textContent = '';
+      if (!url) return;
+      signup.appendChild(document.createTextNode('还没有 key？先去注册一个：'));
+      const link = document.createElement('a');
+      link.href = url;
+      link.target = '_blank';
+      link.rel = chosen.dataset.sponsored ? 'noreferrer noopener sponsored' : 'noreferrer noopener';
+      link.textContent = chosen.textContent;
+      signup.appendChild(link);
+      if (chosen.dataset.sponsored) signup.appendChild(document.createTextNode('（含推广链接，通过它注册本项目会有收益；你不用它也一样能用）'));
+    }
+    picker.addEventListener('change', showSignup);
+    showSignup();
     document.getElementById('key').addEventListener('submit', async (event) => {
       event.preventDefault();
       const form = event.target;

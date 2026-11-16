@@ -25,6 +25,7 @@ import {
 	installMagpie,
 	listModels,
 } from '@pi-magpie-bot/gateway';
+import { VENDORS } from './vendors.ts';
 
 /** A `.env` beside the checkout, so a user can set a token in a text editor. */
 function loadDotEnv(path: string): void {
@@ -74,22 +75,6 @@ async function magpieBinary(): Promise<string | undefined> {
 		return undefined;
 	}
 }
-
-/**
- * The vendors the first-run page names. Short on purpose: someone with a vendor
- * this list misses still has the command underneath it, and a wall of twenty
- * choices is what the page is trying to spare them.
- */
-const VENDORS = [
-	{ id: 'deepseek', name: 'DeepSeek' },
-	{ id: 'moonshot-cn', name: 'Kimi（国内站）' },
-	{ id: 'zhipu', name: '智谱 GLM' },
-	{ id: 'qwen-cn', name: '通义千问（国内站）' },
-	{ id: 'openai', name: 'OpenAI' },
-	{ id: 'anthropic', name: 'Anthropic' },
-	{ id: 'google', name: 'Google Gemini' },
-	{ id: 'xai', name: 'xAI' },
-];
 
 /** Saves the key the first-run page took. It never comes back out of here. */
 async function saveKey(input: { preset: string; key: string }): Promise<string> {

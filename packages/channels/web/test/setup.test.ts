@@ -54,6 +54,37 @@ describe('the first-run page', () => {
 });
 
 describe('the key box', () => {
+	const onKey = async () => undefined;
+
+	it('links to where a key is got, and marks a link that earns the project something', () => {
+		const page = setupPage({
+			title: 't',
+			reason: 'r',
+			steps: [],
+			onKey,
+			presets: [
+				{ id: 'a', name: 'Plain', signup: 'https://plain.example/keys' },
+				{ id: 'b', name: 'Paid', signup: 'https://paid.example/?ref=x', sponsored: true },
+			],
+		});
+		expect(page).toContain('data-signup="https://plain.example/keys"');
+		expect(page).toMatch(/data-signup="https:\/\/paid\.example\/\?ref=x" data-sponsored="1"/);
+		expect(page).toContain('含推广链接');
+		expect(page).not.toMatch(/value="a"[^>]*data-sponsored/);
+	});
+
+	it('never puts anything but an https link into the page', () => {
+		const page = setupPage({
+			title: 't',
+			reason: 'r',
+			steps: [],
+			onKey,
+			presets: [{ id: 'a', name: 'Bad', signup: 'javascript:alert(1)' }],
+		});
+		expect(page).not.toContain('javascript:');
+		expect(page).toContain('data-signup=""');
+	});
+
 	it('is left out when there is nowhere to save a key', () => {
 		const page = setupPage({ title: '还不能聊天', reason: '没有模型', steps: [], presets: VENDORS });
 		expect(page).not.toContain('name="key"');

@@ -21,6 +21,8 @@ export const PAGE = `<!doctype html>
   a { color: inherit; }
   form { display: flex; gap: 8px; padding: 12px 16px; border-top: 1px solid #8884; }
   textarea { flex: 1; resize: none; font: inherit; padding: 10px; border-radius: 12px; border: 1px solid #8886; background: transparent; color: inherit; }
+  .chips { align-self: flex-start; display: flex; flex-wrap: wrap; gap: 8px; }
+  .chip { padding: 8px 14px; border-radius: 999px; background: transparent; color: inherit; border: 1px solid #8886; }
   button { font: inherit; padding: 0 18px; border-radius: 12px; border: 0; background: #2f7cf6; color: #fff; }
   button:disabled { opacity: .5; }
 </style>
@@ -76,6 +78,26 @@ export const PAGE = `<!doctype html>
 
   add('sys', '直接说话就行。我是跑在这台机器上的，记性存在本地。');
 
+  // A first visit gets things to try, so nobody faces an empty box. They
+  // go away for good after the first message, from here or from the box.
+  const tries = ['十分钟后提醒我关火', '记住：我对花生过敏', '我让你记过什么？'];
+  let chips = null;
+  try {
+    if (!localStorage.getItem('talked')) {
+      chips = document.createElement('div');
+      chips.className = 'chips';
+      tries.forEach((line) => {
+        const chip = document.createElement('button');
+        chip.type = 'button';
+        chip.className = 'chip';
+        chip.textContent = line;
+        chip.onclick = () => submit(line);
+        chips.appendChild(chip);
+      });
+      log.appendChild(chips);
+    }
+  } catch (error) {}
+
   const events = new EventSource('/api/events');
   events.onmessage = (event) => {
     const data = JSON.parse(event.data);
@@ -83,12 +105,12 @@ export const PAGE = `<!doctype html>
   };
   events.onerror = () => add('sys', '连接断了，正在重试…');
 
-  form.onsubmit = async (event) => {
-    event.preventDefault();
-    const body = text.value.trim();
-    if (!body) return;
-    text.value = '';
-    text.style.height = 'auto';
+  async function submit(body) {
+    if (chips) {
+      chips.remove();
+      chips = null;
+    }
+    try { localStorage.setItem('talked', '1'); } catch (error) {}
     add('me', body);
     send.disabled = true;
     try {
@@ -102,6 +124,15 @@ export const PAGE = `<!doctype html>
       send.disabled = false;
       text.focus();
     }
+  }
+
+  form.onsubmit = (event) => {
+    event.preventDefault();
+    const body = text.value.trim();
+    if (!body) return;
+    text.value = '';
+    text.style.height = 'auto';
+    submit(body);
   };
 
   text.addEventListener('keydown', (event) => {
