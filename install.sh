@@ -10,6 +10,10 @@
 # anonymous pool, creates the `free` routing group, and writes .env. Nothing
 # asks for an API key: the free pool needs no account. Bring your own provider
 # later in `magpie web`.
+#
+# Options: --telegram, --no-magpie (do not touch magpie at all), and
+# --manage-existing-magpie (let this script add the free pool to a magpie that
+# is already installed; by default an existing one is left alone).
 set -euo pipefail
 
 cd "$(dirname "$0")"
@@ -48,10 +52,12 @@ checksum_ok() {
 
 TELEGRAM=0
 MANAGE_MAGPIE=1
+TAKE_OVER=0
 for arg in "$@"; do
 	case "$arg" in
 		--telegram) TELEGRAM=1 ;;
 		--no-magpie) MANAGE_MAGPIE=0 ;;
+		--manage-existing-magpie) TAKE_OVER=1 ;;
 		-h | --help) sed -n '2,12p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
 		*) die "unknown option: $arg" ;;
 	esac
@@ -77,6 +83,15 @@ say "pnpm $(pnpm -v)"
 
 # --- 2. magpie ---------------------------------------------------------------
 MAGPIE_BIN="${MAGPIE_BIN:-$(command -v magpie || true)}"
+[ -z "$MAGPIE_BIN" ] && [ -x "$HOME/.local/bin/magpie" ] && MAGPIE_BIN="$HOME/.local/bin/magpie"
+# A magpie that was here before this script is somebody's working gateway, and
+# the steps below add a plugin, sign in and start a server on it. Not without
+# being asked.
+if [ "$MANAGE_MAGPIE" = 1 ] && [ -n "$MAGPIE_BIN" ] && [ "$TAKE_OVER" = 0 ]; then
+	warn "magpie is already installed ($MAGPIE_BIN); leaving it exactly as it is"
+	warn "to let this script add the free pool to it, run again with --manage-existing-magpie"
+	MANAGE_MAGPIE=0
+fi
 if [ "$MANAGE_MAGPIE" = 1 ] && [ -z "$MAGPIE_BIN" ] && [ ! -x "$HOME/.local/bin/magpie" ]; then
 	OS="$(uname -s | tr '[:upper:]' '[:lower:]')"
 	case "$(uname -m)" in

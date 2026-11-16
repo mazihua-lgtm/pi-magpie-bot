@@ -209,6 +209,8 @@ a crash: **[docs/architecture.md](docs/architecture.md)**, with an English secti
 - One process per data directory (SQLite has a single writer).
 - An approval card only takes a short yes/no; anything else you type while a card is open is
   treated as a new message.
+- If magpie is already installed, `install.sh` leaves it alone (no plugin, no sign-in, no server);
+  add `--manage-existing-magpie` to let it add the free pool.
 - Reading, writing, editing files and running commands **all need your approval**, but paths
   outside the working directory are guarded only by that card, with no sandbox: read the path
   before you approve.
