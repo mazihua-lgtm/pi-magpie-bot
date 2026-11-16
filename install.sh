@@ -227,6 +227,7 @@ else
 fi
 
 say "installed"
+[ "${GET_SH:-0}" = 1 ] && exit 0
 cat <<'DONE'
 
   启动 / Start:     pnpm start

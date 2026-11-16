@@ -36,8 +36,8 @@ else's server and you pay monthly for them. This project hands you the same piec
   community: no account, no key. The first start installs it, signs in and builds the `free`
   routing group; after that nobody touches it. Want more stability or a bigger model? Swap in
   your own — it is one model name.
-- **Your data stays yours.** Conversations, memories and schedules are local SQLite and Markdown
-  files. Copy the folder and you have migrated.
+- **Your records stay yours.** Conversations, memories and schedules are local SQLite and Markdown
+  files. Copy the folder and you have migrated (what the model sees is covered under Privacy below).
 - **Survives a kill.** A message is written to disk before it is handled; after a restart the work
   carries on, and nothing is answered twice. A message that was cut off mid-answer is closed and
   reported once — it does not come back as a second reply.
@@ -46,8 +46,42 @@ else's server and you pay monthly for them. This project hands you the same piec
 
 ## Quick start
 
-You need **Node.js 24 or newer** ([download](https://nodejs.org); the built-in database uses the
-SQLite it ships). macOS, Linux and Windows under WSL all work.
+**Nothing to install first.** Open a terminal and paste one line:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/mazihua-lgtm/pi-magpie-bot/main/get.sh | bash
+```
+
+A few minutes later (a few hundred MB to download) your browser opens the chat page; just type.
+Node.js and pnpm are put inside `~/.pi-magpie-bot`, nothing else on the system is touched, and the
+assistant starts again by itself when you log in. macOS, Linux and Windows under WSL work (native
+Windows: use Docker, below).
+
+One command is all you need afterwards:
+
+```sh
+pi-magpie-bot status      # is it running
+pi-magpie-bot logs        # read the log
+pi-magpie-bot restart     # after editing .env
+pi-magpie-bot update      # newest version
+pi-magpie-bot uninstall   # remove it (chats and memory are kept by default)
+```
+
+![Saying "remind me to turn off the stove in ten minutes": the reminder is scheduled, the model is free, no key anywhere](docs/chat.png)
+
+**Things to try first:** "remind me to turn off the stove in ten minutes", "remember that I am
+allergic to peanuts", "remind me about the meeting at 8 tomorrow", "what did I just ask you to remember?"
+
+### Privacy in one sentence
+
+Conversations, memories and schedules are stored on your own machine. But **every message has to
+be sent to a model to get an answer**: on the free pool it passes through third-party channels
+behind that pool, so do not tell it passwords or ID numbers; with your own key it goes only to the
+vendor you chose.
+
+### Manual install (for people at home in a terminal)
+
+You need **Node.js 24 or newer** ([download](https://nodejs.org)) and pnpm.
 
 ```sh
 pnpm install
@@ -57,11 +91,7 @@ pnpm start            # start it
 The first start is the setup: with no magpie on the machine it downloads the official release
 (checksum compared before it is kept), installs the free-model plugin, signs in to the anonymous
 pool, creates the `free` routing group, and only then connects. `./install.sh` does the same and
-also writes your `.env`.
-
-Then open <http://127.0.0.1:8787> and type.
-
-![Saying "remind me to turn off the stove in ten minutes": the reminder is scheduled, the model is free, no key anywhere](docs/chat.png)
+also writes your `.env`. Then open <http://127.0.0.1:8787>.
 
 ### Does the free pool need configuring?
 
