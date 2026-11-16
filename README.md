@@ -62,16 +62,17 @@ magpie plugin login our-free-model
 
 免费池的代价是排队和限制。想稳定、想用大模型，两条路：
 
-**自己的 key** — 打开 `magpie web`（默认 <http://127.0.0.1:3430>），Providers 里加一个，把 key 粘进去；再到 Routing 把 `free` 组里的模型换成你的，或者直接把 `.env` 的 `MAGPIE_MODEL` 改成 `auto/<模型名>`。
+**自己的 key** — `magpie provider add deepseek sk-…`（`magpie presets` 看全部厂商），或者打开 `magpie web`（默认 <http://127.0.0.1:3430>）在页面里加。
 
-**本地模型** — 在 Ollama 或 vLLM 里起一个 OpenAI 兼容端点，然后：
+**本地模型** — Ollama / vLLM / LM Studio 起一个 OpenAI 兼容端点，然后：
 
 ```sh
-magpie provider add ollama --base-url http://127.0.0.1:11434/v1 --api-key ollama
-magpie group add mine 'models=ollama/*' routing=order
+magpie provider add ollama url=http://127.0.0.1:11434/v1 models=qwen3:8b
 ```
 
-`.env` 里 `MAGPIE_MODEL=group/mine`，就完全离线了。
+`.env` 里把 `MAGPIE_MODEL` 改成 `ollama/qwen3:8b`，就完全离线了。
+
+每一步、每个坑（哪些模型不能调工具、上下文要多长）写在 **[docs/own-models.md](docs/own-models.md)**。
 
 ## 云端 / Cloud
 
