@@ -6,9 +6,10 @@
 #   ./install.sh --no-magpie  keep the magpie I already run
 #
 # What it does: checks Node, installs the dependencies, downloads magpie (the
-# gateway that reaches the models), adds the free-model plugin, creates the
-# `free` routing group, and writes .env. Nothing asks for an API key: the free
-# pool needs no account. Bring your own provider later in `magpie web`.
+# gateway that reaches the models), adds the free-model plugin, signs in to the
+# anonymous pool, creates the `free` routing group, and writes .env. Nothing
+# asks for an API key: the free pool needs no account. Bring your own provider
+# later in `magpie web`.
 set -euo pipefail
 
 cd "$(dirname "$0")"
@@ -86,32 +87,50 @@ if [ "$MANAGE_MAGPIE" = 1 ] && [ -z "$MAGPIE_BIN" ] && [ ! -x "$HOME/.local/bin/
 	esac
 fi
 
+# --- 2. the free pool, then magpie -------------------------------------------
 FREE_GROUP_ID="free"
+FREE_PLUGIN_URL="https://github.com/mu-zi-lee/magpie-our-free-model"
+
+# magpie inherits this machine's proxy settings; a proxy that is set and dead
+# breaks its downloads, so each command is tried again with none.
+run_magpie() {
+	"$MAGPIE_BIN" "$@" 2>/dev/null && return 0
+	env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY "$MAGPIE_BIN" "$@" 2>/dev/null
+}
+
+gateway_up() { curl -fsS --max-time 2 http://127.0.0.1:3425/v1/models >/dev/null 2>&1; }
+
 if [ "$MANAGE_MAGPIE" = 1 ] && [ -n "$MAGPIE_BIN" ]; then
 	mkdir -p "$HOME/.local/state/magpie-bot"
 	LOG="$HOME/.local/state/magpie-bot/magpie.log"
-	if ! curl -fsS --max-time 2 http://127.0.0.1:3425/v1/models >/dev/null 2>&1; then
+
+	# Everything here happens with no gateway listening: the free pool's sign-in
+	# asks a running magpie for a management page it has no key for and is
+	# refused, so it only works while nothing is up.
+	if ! gateway_up; then
+		say "adding the free-model plugin"
+		run_magpie plugin add "$FREE_PLUGIN_URL" || warn "could not add the free-model plugin; free models will not appear"
+
+		say "signing in to the free pool"
+		# Its one question has two answers; the first is the one that hands the
+		# gateway its models with no browser involved. stdin is fed twice on
+		# purpose: a second try needs its own answer.
+		if ! printf '1\n' | "$MAGPIE_BIN" plugin login our-free-model 2>/dev/null; then
+			printf '1\n' | env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY "$MAGPIE_BIN" plugin login our-free-model 2>/dev/null ||
+				warn "the sign-in did not finish; free models may not appear until it does"
+		fi
+
 		say "starting magpie (log: $LOG)"
-		# The gateway must not inherit a proxy it may not have; a stale HTTPS_PROXY
-		# is what breaks plugin downloads.
 		(env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY nohup "$MAGPIE_BIN" serve >"$LOG" 2>&1 &)
 		for _ in $(seq 1 60); do
-			curl -fsS --max-time 2 http://127.0.0.1:3425/v1/models >/dev/null 2>&1 && break
+			gateway_up && break
 			sleep 1
 		done
 	fi
-	if curl -fsS --max-time 3 http://127.0.0.1:3425/v1/models >/dev/null 2>&1; then
-		say "gateway is up on 127.0.0.1:3425"
-		if ! env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY "$MAGPIE_BIN" providers 2>/dev/null | grep -q "our-free-model"; then
-			PLUGIN_DIR="$HOME/.local/share/pi-magpie-bot/magpie-our-free-model"
-			if [ ! -d "$PLUGIN_DIR" ]; then
-				say "adding the free-model plugin"
-				git clone --depth 1 https://github.com/mu-zi-lee/magpie-our-free-model "$PLUGIN_DIR" >/dev/null 2>&1 ||
-					warn "could not clone the free-model plugin; free models will not appear"
-			fi
-			[ -d "$PLUGIN_DIR" ] && env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY "$MAGPIE_BIN" plugin add "$PLUGIN_DIR" >/dev/null 2>&1 || true
-		fi
-		env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY "$MAGPIE_BIN" group add "$FREE_GROUP_ID" 'models=our-free-model/*' routing=smart >/dev/null 2>&1 || true
+
+	if gateway_up; then
+		run_magpie group add "$FREE_GROUP_ID" 'models=our-free-model/*' routing=smart ||
+			warn "could not create the '$FREE_GROUP_ID' routing group"
 		say "routing group '$FREE_GROUP_ID' ready (model id: group/$FREE_GROUP_ID)"
 	else
 		warn "magpie did not answer on 127.0.0.1:3425; see $LOG"

@@ -85,9 +85,10 @@ describe('installing magpie', () => {
 describe('the free route', () => {
 	/**
 	 * A magpie that records what it was asked to do. `plugin login` waits on
-	 * stdin the way the real one does, so the sign-in is driven for real.
+	 * stdin the way the real one does, so the sign-in is driven for real; with
+	 * `behindProxy` it fails when handed a proxy, as a blocked download does.
 	 */
-	const fakeMagpie = async (dir: string, signedIn: boolean) => {
+	const fakeMagpie = async (dir: string, options: { signedIn: boolean; behindProxy?: boolean }) => {
 		const calls = join(dir, 'calls');
 		const fake = join(dir, 'magpie');
 		await writeFile(
@@ -95,12 +96,13 @@ describe('the free route', () => {
 			`#!/bin/sh
 echo "$@" >> "${calls}"
 if [ "$1 $2" = "plugin list" ]; then
-  echo '{"providers":[{"id":"our-free-model","signedIn":${signedIn}}]}'
+  echo '{"providers":[{"id":"our-free-model","signedIn":${options.signedIn}}]}'
   exit 0
 fi
 if [ "$1 $2" = "plugin login" ]; then
   printf 'How do you sign in to Our Free Model?\\n  1. 启用模型 / 打开账号管理控制台\\n  2. 临时远程控制台（免登录）\\n> '
   read -r answer
+  ${options.behindProxy ? 'if [ -n "${HTTPS_PROXY:-}" ]; then\n    echo "magpie: 内置服务启动失败：原渠道包下载失败"\n    exit 1\n  fi' : ''}
   echo "answer=$answer" >> "${calls}"
 fi
 `,
@@ -111,7 +113,7 @@ fi
 
 	it('adds the plugin, signs it in, then adds the group it feeds', async () => {
 		const dir = await tempDir();
-		const { fake, calls } = await fakeMagpie(dir, false);
+		const { fake, calls } = await fakeMagpie(dir, { signedIn: false });
 
 		await ensureFreeRoute({ binary: fake });
 
@@ -123,13 +125,34 @@ fi
 
 	it('does not sign in again when the pool already is', async () => {
 		const dir = await tempDir();
-		const { fake, calls } = await fakeMagpie(dir, true);
+		const { fake, calls } = await fakeMagpie(dir, { signedIn: true });
 
 		await ensureFreeRoute({ binary: fake });
 
 		const lines = (await readFile(calls, 'utf8')).trim().split('\n');
 		expect(lines).not.toContain('plugin login our-free-model');
 		expect(lines.some((line) => line.startsWith('answer='))).toBe(false);
+		expect(lines.at(-1)).toBe(`group add ${FREE_GROUP} models=our-free-model/* routing=smart`);
+	});
+
+	it('signs in again without the proxy when the first try is blocked', async () => {
+		const dir = await tempDir();
+		const { fake, calls } = await fakeMagpie(dir, { signedIn: false, behindProxy: true });
+		const logged: string[] = [];
+		const before = process.env.HTTPS_PROXY;
+		process.env.HTTPS_PROXY = 'http://127.0.0.1:9';
+		try {
+			await ensureFreeRoute({ binary: fake, log: (line) => logged.push(line) });
+		} finally {
+			if (before === undefined) delete process.env.HTTPS_PROXY;
+			else process.env.HTTPS_PROXY = before;
+		}
+
+		const lines = (await readFile(calls, 'utf8')).trim().split('\n');
+		expect(lines).toContain('answer=1');
+		// It says why, rather than only that the sign-in failed.
+		expect(logged.join('\n')).toContain('原渠道包下载失败');
+		expect(logged.join('\n')).toContain("trying again without this machine's proxy settings");
 		expect(lines.at(-1)).toBe(`group add ${FREE_GROUP} models=our-free-model/* routing=smart`);
 	});
 });
