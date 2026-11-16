@@ -10,6 +10,11 @@ export interface WebChannelOptions {
 	host?: string;
 	/** If set, the page asks for it before anything is accepted. */
 	password?: string;
+	/**
+	 * What was said in this session before, so a reopened tab is not an empty
+	 * page. Given, the transcript is what a new connection shows.
+	 */
+	history?: (target: string) => Promise<Array<{ role: 'me' | 'bot'; text: string }>>;
 	onMessage: (event: MessageEvent) => void | Promise<void>;
 }
 
@@ -173,7 +178,7 @@ export class WebChannel implements Channel {
 
 		if (url.pathname === '/api/events' && request.method === 'GET') {
 			if (!this.authorized(request, cookie)) return json(response, 401, { error: 'unauthorized' });
-			return this.subscribe(session, response);
+			return await this.subscribe(session, response);
 		}
 
 		if (url.pathname === '/api/message' && request.method === 'POST') {
@@ -194,7 +199,7 @@ export class WebChannel implements Channel {
 		return json(response, 404, { error: 'not found' });
 	}
 
-	private subscribe(session: string, response: ServerResponse): void {
+	private async subscribe(session: string, response: ServerResponse): Promise<void> {
 		const state = this.state(session);
 		response.writeHead(200, {
 			'content-type': 'text/event-stream; charset=utf-8',
@@ -202,10 +207,21 @@ export class WebChannel implements Channel {
 			connection: 'keep-alive',
 		});
 		response.write(': connected\n\n');
-		for (const text of state.buffer.splice(0)) {
-			response.write(`data: ${JSON.stringify({ text })}\n\n`);
-		}
 		state.subscribers.add(response);
+
+		if (this.options.history) {
+			// The transcript already holds what the buffer holds, and more: show it
+			// rather than the buffer, so a refresh brings the whole chat back.
+			state.buffer.length = 0;
+			for (const entry of await this.options.history(session)) {
+				response.write(`data: ${JSON.stringify(entry)}\n\n`);
+			}
+		} else {
+			for (const text of state.buffer.splice(0)) {
+				response.write(`data: ${JSON.stringify({ text })}\n\n`);
+			}
+		}
+
 		const keepAlive = setInterval(() => response.write(': keep-alive\n\n'), 20_000);
 		response.on('close', () => {
 			clearInterval(keepAlive);

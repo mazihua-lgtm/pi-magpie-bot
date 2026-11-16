@@ -40,23 +40,40 @@ console.log('[bot] starting up');
 console.log(`[bot] data in ${dataDir}`);
 
 const config = gatewayConfig();
-await ensureGateway(config, { start: env.MAGPIE_START !== '0' });
+
+/**
+ * A gateway that is down is started or waited for; one that answers with a
+ * refusal is not down at all, so send the user to the key instead of a timeout.
+ */
+async function modelIds(): Promise<string[]> {
+	try {
+		return (await listModels(config)).map((model) => model.id);
+	} catch (error) {
+		if (/\b(401|403|429)\b/.test(String(error))) {
+			console.error('[bot] magpie refused this gateway key');
+			console.error('[bot] a shared gateway has its own keys; make one and put it in .env as MAGPIE_API_KEY:');
+			console.error('[bot]   magpie gateway-key add bot');
+			process.exit(1);
+		}
+		await ensureGateway(config, { start: env.MAGPIE_START !== '0' });
+		return (await listModels(config)).map((model) => model.id);
+	}
+}
+
+const ids = await modelIds();
 
 // A brand-new gateway has no routing groups, and an empty model name fails much
 // later and much less clearly: say what to run while the user is still looking.
 const wanted = env.MAGPIE_MODEL?.trim();
-if (wanted) {
-	const ids = (await listModels(config)).map((model) => model.id);
-	if (!ids.includes(wanted)) {
-		console.error(`[bot] magpie has no model "${wanted}"`);
-		if (wanted === 'group/free') {
-			console.error('[bot] the free route has to be created once:');
-			console.error('[bot]   magpie plugin add https://github.com/mu-zi-lee/magpie-our-free-model');
-			console.error(`[bot]   magpie group add free 'models=our-free-model/*' routing=smart`);
-		}
-		console.error(`[bot] available now: ${ids.slice(0, 12).join(', ')}${ids.length > 12 ? ', …' : ''}`);
-		process.exit(1);
+if (wanted && !ids.includes(wanted)) {
+	console.error(`[bot] magpie has no model "${wanted}"`);
+	if (wanted === 'group/free') {
+		console.error('[bot] the free route has to be created once:');
+		console.error('[bot]   magpie plugin add https://github.com/mu-zi-lee/magpie-our-free-model');
+		console.error(`[bot]   magpie group add free 'models=our-free-model/*' routing=smart`);
 	}
+	console.error(`[bot] available now: ${ids.slice(0, 12).join(', ')}${ids.length > 12 ? ', …' : ''}`);
+	process.exit(1);
 }
 
 const bot = await Bot.open({
@@ -94,6 +111,8 @@ if (!webDisabled) {
 		port: Number(env.WEB_PORT ?? 8787),
 		host: env.WEB_HOST ?? '127.0.0.1',
 		password: env.WEB_PASSWORD,
+		// A reopened tab gets the conversation back instead of an empty page.
+		history: (target) => bot.transcript('web', target),
 		onMessage: (event) => {
 			bot.ingest(event);
 		},

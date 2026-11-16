@@ -77,6 +77,17 @@ export function conversationIdFor(channel: string, target: string): string {
 	return `c_${createHash('sha256').update(`${channel}:${target}`).digest('hex').slice(0, 16)}`;
 }
 
+/** The words of a message, leaving out tool calls and images. */
+function textOf(message: Message): string {
+	// What the user typed is kept as a plain string; an answer comes as parts.
+	if (typeof message.content === 'string') return message.content;
+	if (!Array.isArray(message.content)) return '';
+	return message.content
+		.filter((part): part is { type: 'text'; text: string } => part.type === 'text')
+		.map((part) => part.text)
+		.join('');
+}
+
 /**
  * The host half of the agent: an inbox in front of it, an outbox behind it,
  * timers beside it. pi-durable owns the run itself.
@@ -279,14 +290,22 @@ export class Bot {
 
 		if (settled.status !== 'done') {
 			const reason = 'reason' in settled ? String(settled.reason) : 'failed';
+			// The user is told, briefly; whoever runs the bot gets the reason written down.
+			console.error(`[bot] no answer: ${reason}`);
+			// A model error is nearly always the free pool being used up, and saying
+			// so beats "try again" to someone who cannot know that.
+			const why =
+				reason === 'model_error'
+					? bilingual(text, '（免费池可能到量了，等一会儿再试；用自己模型的检查一下 magpie）', ' (the free pool may be used up: try again later, or check magpie if you use your own model)')
+					: '';
 			this.outbox.enqueue({
 				conversation: conversationId,
 				channel: target.channel,
 				target: target.target,
 				text: bilingual(
 					text,
-					`这次没能回答（${reason}）。可以再说一次，或者稍后让我重试。`,
-					`That one did not come back (${reason}). Send it again, or ask me to retry later.`,
+					`这次没能回答（${reason}）。可以再说一次，或者稍后让我重试。${why}`,
+					`That one did not come back (${reason}). Send it again, or ask me to retry later.${why}`,
 				),
 			});
 			return;
@@ -302,11 +321,21 @@ export class Bot {
 		const conversation = await this.ensureConversation(conversationId);
 		const view = await conversation.context(BACKGROUND_CONTEXT);
 		const last = [...(view.messages as readonly Message[])].reverse().find((message) => message.role === 'assistant');
-		if (!last || !Array.isArray(last.content)) return '';
-		return last.content
-			.filter((part): part is { type: 'text'; text: string } => part.type === 'text')
-			.map((part) => part.text)
-			.join('');
+		return last ? textOf(last) : '';
+	}
+
+	/**
+	 * Everything said in this chat, oldest first, for a surface that wants to show
+	 * a reopened tab its own history instead of an empty page.
+	 */
+	async transcript(channel: string, target: string, limit = 50): Promise<Array<{ role: 'me' | 'bot'; text: string }>> {
+		const conversation = await this.ensureConversation(conversationIdFor(channel, target));
+		const view = await conversation.context(BACKGROUND_CONTEXT);
+		return (view.messages as readonly Message[])
+			.filter((message) => message.role === 'user' || message.role === 'assistant')
+			.map((message) => ({ role: message.role === 'user' ? ('me' as const) : ('bot' as const), text: textOf(message) }))
+			.filter((entry) => entry.text.trim() !== '')
+			.slice(-limit);
 	}
 
 	private async ensureConversation(conversationId: string) {

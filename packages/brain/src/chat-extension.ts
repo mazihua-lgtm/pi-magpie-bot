@@ -1,4 +1,4 @@
-import { defineExtension, defineTool, type Extension } from '@earendil-works/pi-durable';
+import { defineExtension, defineTool, section, type Extension } from '@earendil-works/pi-durable';
 import { num, obj, opt, str } from '@earendil-works/pi-schema';
 import type { Outbox, Schedules, Targets } from '@pi-magpie-bot/events';
 
@@ -7,6 +7,15 @@ const reply = (text: string, isError = false) => ({
 	output: [{ type: 'text' as const, text }],
 	...(isError ? { isError: true } : {}),
 });
+
+/** The user's own clock, in a form that keeps its offset: 2026-11-17T07:00:00+08:00. */
+export function stamp(at: number): string {
+	const offset = -new Date(at).getTimezoneOffset();
+	const sign = offset >= 0 ? '+' : '-';
+	const minutes = Math.abs(offset);
+	const hours = String(Math.floor(minutes / 60)).padStart(2, '0');
+	return `${new Date(at).toLocaleString('sv-SE').replace(' ', 'T')}${sign}${hours}:${String(minutes % 60).padStart(2, '0')}`;
+}
 
 export interface ChatExtensionOptions {
 	outbox: Outbox;
@@ -65,7 +74,7 @@ export function createChatExtension(options: ChatExtensionOptions): Extension {
 						at,
 						everyMs: args.everyMinutes != null ? args.everyMinutes * 60_000 : undefined,
 					});
-					return reply(`scheduled ${id} for ${new Date(at).toISOString()}`);
+					return reply(`scheduled ${id} for ${stamp(at)}`);
 				},
 			}),
 			defineTool({
@@ -81,7 +90,7 @@ export function createChatExtension(options: ChatExtensionOptions): Extension {
 						rows
 							.map(
 								(row) =>
-									`${row.id} at ${new Date(row.next_run_at).toISOString()}${row.every_ms ? ` every ${row.every_ms / 60_000}m` : ''}: ${row.text}`,
+									`${row.id} at ${stamp(row.next_run_at)}${row.every_ms ? ` every ${row.every_ms / 60_000}m` : ''}: ${row.text}`,
 							)
 							.join('\n'),
 					);
@@ -95,6 +104,10 @@ export function createChatExtension(options: ChatExtensionOptions): Extension {
 					return reply(options.schedules.remove(args.id) ? 'cancelled' : 'no such reminder');
 				},
 			}),
+		],
+		sections: [
+			// Without a clock "tomorrow at seven" has nothing to count from.
+			section('time', () => `It is now ${stamp(now())}. Read every time the user gives against this clock.`),
 		],
 	});
 }

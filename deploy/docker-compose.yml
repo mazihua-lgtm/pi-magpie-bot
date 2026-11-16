@@ -5,7 +5,11 @@
 #
 # magpie 只在内部网络里，不对外开端口；对外只有网页聊天。
 #
-# 起来之后还要把免费路线开一次（新容器里还没有这个组）：
+# 容器里的 magpie 要自己的 key（本机跑的时候不用）：
+#   docker compose -f deploy/docker-compose.yml exec magpie /magpie gateway-key add bot
+# 把打印出来的 sk-magpie-key-… 写进 .env 的 MAGPIE_API_KEY，再 up -d 一次。
+#
+# 新起来的 magpie 里还没有免费路线，开一次：
 #   docker compose -f deploy/docker-compose.yml exec magpie \
 #     /magpie plugin add https://github.com/mu-zi-lee/magpie-our-free-model
 #   docker compose -f deploy/docker-compose.yml exec magpie \
@@ -17,6 +21,13 @@ services:
     restart: unless-stopped
     volumes:
       - magpie-config:/config
+    # 镜像里没有 shell，只有 magpie 自己；它就是现成的探针
+    healthcheck:
+      test: ["CMD", "/magpie", "healthcheck", "--addr", "127.0.0.1:3425"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 5s
 
   bot:
     build:
@@ -24,11 +35,16 @@ services:
       dockerfile: Dockerfile
     restart: unless-stopped
     depends_on:
-      - magpie
+      magpie:
+        condition: service_healthy
     environment:
       MAGPIE_BASE_URL: http://magpie:3425
-      MAGPIE_API_KEY: ${MAGPIE_API_KEY:-magpie}
+      MAGPIE_API_KEY: ${MAGPIE_API_KEY:-}
       MAGPIE_MODEL: ${MAGPIE_MODEL:-group/free}
+      # 容器默认是 UTC；提醒和时间都按这个算
+      TZ: ${TZ:-Asia/Shanghai}
+      # magpie 是另一个容器，bot 只连它，不自己再起一个
+      MAGPIE_START: "0"
       TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
       WEB_PASSWORD: ${WEB_PASSWORD:-}
       ALLOWED_USERS: ${ALLOWED_USERS:-}

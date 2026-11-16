@@ -2,9 +2,11 @@
 FROM node:24-bookworm-slim
 
 WORKDIR /app
+# A container keeps UTC unless told otherwise, and the agent reads its own clock.
 ENV DATA_DIR=/data \
 	WEB_HOST=0.0.0.0 \
-	WEB_PORT=8787
+	WEB_PORT=8787 \
+	TZ=Asia/Shanghai
 
 RUN corepack enable
 

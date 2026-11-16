@@ -32,6 +32,8 @@ pnpm start            # 启动
 
 然后打开 <http://127.0.0.1:8787>，直接打字说话。
 
+![浏览器里的聊天：说一句话，提醒就排进了日程，刷新页面聊天记录还在](docs/chat.png)
+
 装完想知道它在哪、数据在哪、怎么换模型，看下面的配置表。
 
 ### 接到 Telegram
@@ -100,6 +102,7 @@ docker compose -f deploy/docker-compose.yml restart bot
 | `MAGPIE_BASE_URL` | `http://127.0.0.1:3425` | 网关地址 |
 | `MAGPIE_START` | `1` | 设 `0` 就只连现成的 magpie，不自己启动（Docker/远程网关） |
 | `DATA_DIR` | `~/.pi-magpie-bot` | 对话、记忆、任务都在这 |
+| `TZ` | 系统时区 | 提醒和「现在几点」按它算；Docker 里默认 `Asia/Shanghai` |
 | `WEB_PORT` / `WEB_HOST` | `8787` / `127.0.0.1` | 网页聊天；`WEB_PORT=0` 关掉 |
 | `WEB_PASSWORD` | 空 | 设了就要密码才能进网页 |
 | `TELEGRAM_BOT_TOKEN` | 空 | 填了就接 Telegram |

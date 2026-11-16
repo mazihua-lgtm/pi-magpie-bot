@@ -45,7 +45,10 @@ export const PAGE = `<!doctype html>
   add('sys', '直接说话就行。我是跑在这台机器上的，记性存在本地。');
 
   const events = new EventSource('/api/events');
-  events.onmessage = (event) => add('bot', JSON.parse(event.data).text);
+  events.onmessage = (event) => {
+    const data = JSON.parse(event.data);
+    add(data.role === 'me' ? 'me' : 'bot', data.text);
+  };
   events.onerror = () => add('sys', '连接断了，正在重试…');
 
   form.onsubmit = async (event) => {

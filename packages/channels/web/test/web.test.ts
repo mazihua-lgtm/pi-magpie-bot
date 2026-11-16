@@ -3,7 +3,7 @@ import { WebChannel } from '../src/index.ts';
 
 const servers: WebChannel[] = [];
 
-const start = async (options: { password?: string } = {}) => {
+const start = async (options: { password?: string; history?: (target: string) => Promise<Array<{ role: 'me' | 'bot'; text: string }>> } = {}) => {
 	const messages: { target: string; text: string }[] = [];
 	const channel = new WebChannel({
 		port: 0,
@@ -68,6 +68,30 @@ describe('web channel', () => {
 		}
 		await reader?.cancel();
 		expect(seen).toContain('晚点才看到的话');
+	});
+
+	it('shows a reopened tab what was said, from the transcript', async () => {
+		const { url } = await start({
+			history: async () => [
+				{ role: 'me', text: '我明天去济南' },
+				{ role: 'bot', text: '记下了' },
+			],
+		});
+		const page = await fetch(`${url}/`);
+		const cookie = page.headers.get('set-cookie')?.split(';')[0] ?? '';
+
+		const events = await fetch(`${url}/api/events`, { headers: { cookie } });
+		const reader = events.body?.getReader();
+		const decoder = new TextDecoder();
+		let seen = '';
+		for (let i = 0; i < 5 && !seen.includes('记下了'); i++) {
+			const chunk = await reader?.read();
+			if (!chunk?.value) break;
+			seen += decoder.decode(chunk.value, { stream: true });
+		}
+		await reader?.cancel();
+		expect(seen).toContain('我明天去济南');
+		expect(seen).toContain('"role":"me"');
 	});
 
 	it('asks for a password when one is set', async () => {
