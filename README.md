@@ -1,10 +1,22 @@
 # pi-magpie-bot
 
-中文 · **[English](README.en.md)**
+<p align="center">
+  <img src="docs/banner.png" alt="pi-magpie-bot" width="860">
+</p>
 
-一个一直在线、会记事、会提醒你的私人助理。跑在你自己的电脑或服务器上，用免费模型就能开口说话：不用注册账号，不用 API key。
+<p align="center">
+  <a href="https://github.com/mazihua-lgtm/pi-magpie-bot/actions/workflows/ci.yml"><img src="https://github.com/mazihua-lgtm/pi-magpie-bot/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue" alt="MIT"></a>
+  <a href="https://github.com/mazihua-lgtm/pi-magpie-bot/releases"><img src="https://img.shields.io/github/v/release/mazihua-lgtm/pi-magpie-bot" alt="release"></a>
+  <img src="https://img.shields.io/badge/node-%E2%89%A524-339933" alt="node 24+">
+  <img src="https://img.shields.io/badge/Telegram%20%C2%B7%20Feishu%20%C2%B7%20Web-channels-5b8def" alt="channels">
+</p>
 
-An always-on personal assistant you run yourself. Memory, reminders and a chat window on any of your devices. It talks to free models out of the box — no account, no API key, no bill.
+<p align="center">中文 · <b><a href="README.en.md">English</a></b> · <a href="#快速开始--quick-start">快速开始</a> · <a href="#接到-telegram">Telegram</a> · <a href="#接到飞书">飞书</a> · <a href="docs/architecture.md">架构</a> · <a href="docs/own-models.md">自带模型</a></p>
+
+**一个一直在线、会记事、会提醒你的私人助理。** 跑在你自己的电脑或服务器上，用免费模型就能开口说话：不用注册账号，不用 API key。在浏览器、Telegram、飞书里都能找到它。
+
+> An always-on personal assistant you run yourself: memory, reminders, free models out of the box (no account, no API key).
 
 ```
 你：十分钟后提醒我关火
@@ -160,7 +172,7 @@ magpie 容器是「别人家的网关」，第一次起会要一把自己的 key
 - 上层这层薄薄的胶水（收件箱、发件箱、定时表、审批表、记忆目录、频道适配）是这个项目自己的，`packages/*/src` 加起来三千行上下，看得完。
 
 ```
-Telegram / 网页 ──▶ inbox（去重、排队）──▶ pi-durable 会话 ──▶ outbox ──▶ 你
+Telegram / 飞书 / 网页 ──▶ inbox（去重、排队）──▶ pi-durable 会话 ──▶ outbox ──▶ 你
                         ▲                      │
                         └── schedules ─────────┘   （定时任务）
 ```
@@ -189,7 +201,7 @@ pnpm smoke         # 直接问一遍网关里的第一个模型
 pnpm smoke:bot     # 不用聊天平台，跑一遍完整链路
 ```
 
-目录：`packages/gateway`（模型）、`packages/events`（宿主表）、`packages/memory`（记忆文件）、`packages/brain`（会话与工具）、`packages/channels/*`（Telegram、网页）、`apps/bot`（入口）。
+目录：`packages/gateway`（模型）、`packages/events`（宿主表）、`packages/memory`（记忆文件）、`packages/brain`（会话与工具）、`packages/channels/*`（Telegram、飞书、网页）、`apps/bot`（入口）。
 
 ## 许可 / License
 

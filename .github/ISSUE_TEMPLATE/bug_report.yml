@@ -1,0 +1,44 @@
+name: 报告问题 / Bug report
+description: 它没按预期工作 / Something does not work as expected
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        请**不要**贴 API key、Telegram token、飞书 App Secret 或 `.env` 的内容。
+        Please do **not** paste API keys, tokens, app secrets or your `.env`.
+  - type: textarea
+    id: what
+    attributes:
+      label: 发生了什么 / What happened
+      description: 你做了什么，期望什么，实际看到什么
+    validations:
+      required: true
+  - type: dropdown
+    id: how
+    attributes:
+      label: 怎么跑的 / How you run it
+      options: [本机 pnpm start / local, ./install.sh, docker compose, 其他 / other]
+    validations:
+      required: true
+  - type: dropdown
+    id: channel
+    attributes:
+      label: 哪个入口 / Channel
+      options: [网页 / web, Telegram, 飞书 / Lark, 不确定 / not sure]
+  - type: dropdown
+    id: model
+    attributes:
+      label: 用的模型 / Model
+      options: [免费池 group/free, 自己的 key, 本地模型 / local, 不确定 / not sure]
+  - type: input
+    id: env
+    attributes:
+      label: 系统和 Node 版本 / OS and Node version
+      placeholder: macOS 15 · node v24.1.0
+  - type: textarea
+    id: logs
+    attributes:
+      label: 日志 / Logs
+      description: 终端里 `[bot]`、`[telegram]`、`[feishu]` 开头的几行就够了
+      render: text

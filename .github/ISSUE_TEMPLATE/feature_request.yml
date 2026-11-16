@@ -1,0 +1,15 @@
+name: 想要的功能 / Feature request
+description: 想让它多做一件事 / Something you would like it to do
+labels: [enhancement]
+body:
+  - type: textarea
+    id: want
+    attributes:
+      label: 想要什么 / What you want
+      description: 先说场景，再说想要的样子 / The situation first, then the shape you imagine
+    validations:
+      required: true
+  - type: textarea
+    id: alt
+    attributes:
+      label: 现在怎么凑合的 / What you do today instead

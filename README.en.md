@@ -1,10 +1,22 @@
 # pi-magpie-bot
 
-English · **[中文](README.md)**
+<p align="center">
+  <img src="docs/banner.png" alt="pi-magpie-bot" width="860">
+</p>
 
-An always-on personal assistant you run yourself. It remembers things, keeps reminders across
-restarts, and talks to you in a browser or on Telegram. It speaks through free models out of the
-box: no account, no API key, no bill.
+<p align="center">
+  <a href="https://github.com/mazihua-lgtm/pi-magpie-bot/actions/workflows/ci.yml"><img src="https://github.com/mazihua-lgtm/pi-magpie-bot/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue" alt="MIT"></a>
+  <a href="https://github.com/mazihua-lgtm/pi-magpie-bot/releases"><img src="https://img.shields.io/github/v/release/mazihua-lgtm/pi-magpie-bot" alt="release"></a>
+  <img src="https://img.shields.io/badge/node-%E2%89%A524-339933" alt="node 24+">
+  <img src="https://img.shields.io/badge/Telegram%20%C2%B7%20Feishu%20%C2%B7%20Web-channels-5b8def" alt="channels">
+</p>
+
+<p align="center"><a href="README.md">中文</a> · <b>English</b> · <a href="#quick-start">Quick start</a> · <a href="#telegram">Telegram</a> · <a href="#feishu--lark">Feishu</a> · <a href="docs/architecture.md">Architecture</a> · <a href="docs/own-models.md">Own models</a></p>
+
+**An always-on personal assistant you run yourself.** It remembers things, keeps reminders across
+restarts, and talks to you in a browser, on Telegram or on Feishu / Lark. It speaks through free
+models out of the box: no account, no API key, no bill.
 
 ```
 You: remind me to turn off the stove in ten minutes
@@ -209,7 +221,7 @@ exists:
   is this project's own, about three thousand lines across `packages/*/src`, short enough to read.
 
 ```
-Telegram / web ──▶ inbox (dedupe, queue) ──▶ pi-durable session ──▶ outbox ──▶ you
+Telegram / Feishu / web ──▶ inbox (dedupe, queue) ──▶ pi-durable session ──▶ outbox ──▶ you
                      ▲                            │
                      └────── schedules ───────────┘   (reminders)
 ```
@@ -249,7 +261,7 @@ pnpm smoke:bot     # run the whole chain without a chat platform
 ```
 
 Packages: `packages/gateway` (models), `packages/events` (host tables), `packages/memory`
-(memory files), `packages/brain` (sessions and tools), `packages/channels/*` (Telegram, web),
+(memory files), `packages/brain` (sessions and tools), `packages/channels/*` (Telegram, Feishu, web),
 `apps/bot` (the entry point).
 
 ## License
