@@ -83,18 +83,53 @@ describe('installing magpie', () => {
 });
 
 describe('the free route', () => {
-	it('adds the plugin, then the group it feeds', async () => {
-		const dir = await tempDir();
+	/**
+	 * A magpie that records what it was asked to do. `plugin login` waits on
+	 * stdin the way the real one does, so the sign-in is driven for real.
+	 */
+	const fakeMagpie = async (dir: string, signedIn: boolean) => {
 		const calls = join(dir, 'calls');
 		const fake = join(dir, 'magpie');
-		// Records what it was asked to do; the real one talks to the gateway.
-		await writeFile(fake, `#!/bin/sh\necho "$@" >> "${calls}"\n`);
+		await writeFile(
+			fake,
+			`#!/bin/sh
+echo "$@" >> "${calls}"
+if [ "$1 $2" = "plugin list" ]; then
+  echo '{"providers":[{"id":"our-free-model","signedIn":${signedIn}}]}'
+  exit 0
+fi
+if [ "$1 $2" = "plugin login" ]; then
+  printf 'How do you sign in to Our Free Model?\\n  1. 启用模型 / 打开账号管理控制台\\n  2. 临时远程控制台（免登录）\\n> '
+  read -r answer
+  echo "answer=$answer" >> "${calls}"
+fi
+`,
+		);
 		await chmod(fake, 0o755);
+		return { fake, calls };
+	};
+
+	it('adds the plugin, signs it in, then adds the group it feeds', async () => {
+		const dir = await tempDir();
+		const { fake, calls } = await fakeMagpie(dir, false);
 
 		await ensureFreeRoute({ binary: fake });
 
 		const lines = (await readFile(calls, 'utf8')).trim().split('\n');
 		expect(lines[0]).toBe('plugin add https://github.com/mu-zi-lee/magpie-our-free-model');
-		expect(lines[1]).toBe(`group add ${FREE_GROUP} models=our-free-model/* routing=smart`);
+		expect(lines).toContain('answer=1');
+		expect(lines.at(-1)).toBe(`group add ${FREE_GROUP} models=our-free-model/* routing=smart`);
+	});
+
+	it('does not sign in again when the pool already is', async () => {
+		const dir = await tempDir();
+		const { fake, calls } = await fakeMagpie(dir, true);
+
+		await ensureFreeRoute({ binary: fake });
+
+		const lines = (await readFile(calls, 'utf8')).trim().split('\n');
+		expect(lines).not.toContain('plugin login our-free-model');
+		expect(lines.some((line) => line.startsWith('answer='))).toBe(false);
+		expect(lines.at(-1)).toBe(`group add ${FREE_GROUP} models=our-free-model/* routing=smart`);
 	});
 });

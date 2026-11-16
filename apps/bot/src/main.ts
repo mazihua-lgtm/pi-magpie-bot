@@ -19,6 +19,7 @@ import {
 	FREE_MODEL_PREFIX,
 	FREE_PLUGIN,
 	gatewayConfig,
+	installMagpie,
 	listModels,
 } from '@pi-magpie-bot/gateway';
 
@@ -55,6 +56,21 @@ const ourBinDir = join(dataDir, 'bin');
 /** How to reach magpie's own CLI: here, or in the container that runs it. */
 const remoteGateway = env.MAGPIE_START === '0';
 const magpieCli = remoteGateway ? 'docker compose -f deploy/docker-compose.yml exec magpie /magpie' : 'magpie';
+/** Which model the user asked for, and whether that means the free pool. */
+const wanted = env.MAGPIE_MODEL?.trim();
+const wantsFree = wanted === `group/${FREE_GROUP}`;
+
+/** magpie's own CLI, fetched and checked if this machine has none. */
+async function magpieBinary(): Promise<string | undefined> {
+	const found = findMagpieBinary(env, [join(ourBinDir, 'magpie')]);
+	if (found) return found;
+	try {
+		return await installMagpie({ dir: ourBinDir, log });
+	} catch (error) {
+		log(`magpie did not install: ${(error as Error).message.split('\n')[0]}`);
+		return undefined;
+	}
+}
 
 /**
  * A setup step that only a person can take is a state, not a crash: the reason
@@ -108,23 +124,26 @@ async function models(): Promise<{ ids: string[]; binary?: string }> {
 		}
 		// No magpie at all on this machine: the release is fetched and checked
 		// rather than sending someone who only has Node off to install it.
-		const started = await ensureGateway(config, {
-			start: env.MAGPIE_START !== '0',
-			installDir: ourBinDir,
-			log,
-		});
-		return { ids: (await listModels(config)).map((model) => model.id), binary: started.binary };
+		const start = env.MAGPIE_START !== '0';
+		// The free pool is signed up before anything listens. Not politeness:
+		// magpie's sign-in asks the running gateway for its management page and
+		// is refused, so it only works while no magpie is up.
+		let binary: string | undefined;
+		if (start && (wantsFree || !wanted)) {
+			binary = await magpieBinary();
+			if (binary) await ensureFreeRoute({ binary, log });
+		}
+		const started = await ensureGateway(config, { start, installDir: ourBinDir, binary, log });
+		return { ids: (await listModels(config)).map((model) => model.id), binary: started.binary ?? binary };
 	}
 }
 
 const reachable = await models();
 let ids = reachable.ids;
 
-// A brand-new gateway has no routing groups. Run the two commands the README
-// lists, rather than making the user copy them out of an error message. A
-// gateway someone already filled with their own models is left alone.
-const wanted = env.MAGPIE_MODEL?.trim();
-const wantsFree = wanted === `group/${FREE_GROUP}`;
+// A gateway someone else started (Homebrew, a desktop app) has no routing
+// groups either. Same two commands, run here; a gateway already filled with
+// the user's own models is left alone.
 const missesFree = wantsFree ? !ids.includes(wanted) : ids.length === 0;
 if (missesFree && env.MAGPIE_START !== '0') {
 	const tool = reachable.binary ?? findMagpieBinary(env, [join(ourBinDir, 'magpie')]);
@@ -139,18 +158,22 @@ if (missesFree && env.MAGPIE_START !== '0') {
 // terminal to read.
 const modelOk = wanted ? ids.includes(wanted) : ids.length > 0;
 if (!modelOk) {
-	// The free plugin brings the pool, but the pool sits behind one browser
-	// step, its console. That much this product cannot do for someone.
-	const waitingForConsole = !ids.some((id) => id.startsWith(FREE_MODEL_PREFIX));
+	// The anonymous pool signs itself up, so getting nothing back means the
+	// upstream gave nothing to this address: out of quota, or it wants a channel
+	// added through its console — the one step a person has to do.
+	const poolEmpty = !ids.some((id) => id.startsWith(FREE_MODEL_PREFIX));
 	await needsSetup({
 		title: '还不能聊天：magpie 里没有能用的模型',
-		reason: waitingForConsole
-			? '免费模型插件装上了，但它手里还没有模型：要在浏览器里打开它的控制台授权一次，那一步只能由人来做。'
+		reason: poolEmpty
+			? '免费池这次没给出模型：要么这个网络地址的额度用完了，要么要在它的控制台里接一个渠道。也可以直接填自己的 key。'
 			: '网关里现在没有这个模型。',
-		steps: waitingForConsole
+		steps: poolEmpty
 			? [
-					{ command: `${magpieCli} plugin login our-free-model`, note: '在浏览器里打开它打印的地址，按页面提示授权，然后回来重启。' },
-					{ command: `${magpieCli} provider add deepseek sk-…`, note: '不想走免费池就填自己的 key（magpie presets 看厂商代号）。' },
+					{
+						command: `${magpieCli} plugin login our-free-model`,
+						note: '先停掉 magpie 再运行；打开它打印的地址，按页面提示接一个渠道，然后重新起 bot。',
+					},
+					{ command: `${magpieCli} provider add deepseek sk-…`, note: '不想等免费池就填自己的 key（magpie presets 看厂商代号）。' },
 				]
 			: [
 					{ command: `${magpieCli} group add ${FREE_GROUP} 'models=our-free-model/*' routing=smart`, note: '把免费模型放进路由组。' },
@@ -159,11 +182,12 @@ if (!modelOk) {
 		docsUrl: 'https://github.com/mazihua-lgtm/pi-magpie-bot/blob/main/docs/own-models.md',
 		console: [
 			wanted ? `magpie has no model "${wanted}"` : 'magpie has no models at all',
-			...(waitingForConsole
+			...(poolEmpty
 				? [
-						'the free pool needs its console opened once, in a browser:',
+						'the free pool gave no models: the quota for this address may be used up,',
+						'or it wants a channel added in its console:',
 						`  ${magpieCli} plugin login our-free-model`,
-						'open the address it prints, authorize a channel, then start this again',
+						'stop magpie first, open the address it prints, add a channel, start this again',
 					]
 				: [
 						'the free route has to be created once:',

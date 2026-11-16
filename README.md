@@ -16,7 +16,7 @@ An always-on personal assistant you run yourself. Memory, reminders and a chat w
 
 Grok Bot 这类产品好用，但你的对话、记忆、日程都在别人服务器上，还要按月付费。这个项目把同样的东西拆开给你：
 
-- **不要钱就能用**：免费池由 [our-free-model](https://github.com/Ebony-Vinyl/dsh-our-free-model) 提供，插件由社区维护，不用注册账号、不用 key。**第一次要在浏览器里打开它的控制台授权一下**（见[免费池第一次要授权](#免费池第一次要授权)），之后就不用人管。想更稳、想用大模型，换成自己的就行，一个模型名就能切。
+- **不要钱就能用**：免费池由 [our-free-model](https://github.com/Ebony-Vinyl/dsh-our-free-model) 提供，插件由社区维护，不用注册账号、不用 key。第一次启动时自动装好、自动登录，之后就不用人管；想更稳、想用大模型，换成自己的就行，一个模型名就能切。
 - **数据在你手里**：对话、记忆、定时任务都是本地 SQLite 和 Markdown 文件，拷走就是迁移。
 - **断电不死**：回复生成到一半电脑被合上，重启后接着干，不会重复回你两遍。
 - **能碰到的东西要你点头**：让它读写你的文件夹、执行命令，每次都要在聊天里回「是」。
@@ -30,7 +30,7 @@ pnpm install
 pnpm start            # 启动
 ```
 
-第一步之后就不用人管了：本机没有 magpie 的话它会自己下载官方发布版（比对 SHA256 再装）、装上免费模型插件、建好 `free` 路由组。想连 `.env` 一起生成就改用 `./install.sh`。
+第一步之后就不用人管了：本机没有 magpie 的话它会自己下载官方发布版（比对 SHA256 再装），装上免费模型插件、登录它的匿名池、建好 `free` 路由组，最后才去连网关。想连 `.env` 一起生成就改用 `./install.sh`。
 
 然后打开 <http://127.0.0.1:8787>，直接打字说话。
 
@@ -38,17 +38,17 @@ pnpm start            # 启动
 
 装完想知道它在哪、数据在哪、怎么换模型，看下面的配置表。
 
-### 免费池第一次要授权
+### 免费池要不要配置
 
-免费模型来自一个社区插件。它不要账号、不要 key，但第一次得把它的控制台在浏览器里打开一次：
+不用。第一次启动时 bot 自己装好插件、用它自己的匿名池账号登录、建好 `group/free`，完了才去连网关——上面那张截图就是这么聊出来的，没人碰过终端。
+
+想要更多额度，或者在匿名池排队时换条路，可以打开插件自己的控制台接一个渠道：
 
 ```sh
 magpie plugin login our-free-model
 ```
 
-终端会打印一个地址——本机是 `127.0.0.1` 上的页面，服务器上是临时的 `trycloudflare.com` 地址（同样不用注册）。打开它，按页面提示完成授权（EAC 授权，或接一个渠道账号），回到网关刷新模型，`group/free` 里就有模型了。
-
-只此一次，之后重启、换机器都不用再管。这一步是插件自己的规矩，本项目替不了；不想做这一步就用自己的模型，见下一节。
+先停掉 magpie 再运行（它要问运行中的网关要管理页，会被拒）。终端会打印一个地址——本机是 `127.0.0.1` 上的页面，服务器上是临时的 `trycloudflare.com` 地址（都不用注册）；打开它按页面提示接渠道，然后重新启动 bot。不接也能用。
 
 ### 接到 Telegram
 
@@ -81,17 +81,19 @@ cp .env.example .env        # 填 TELEGRAM_BOT_TOKEN 和 WEB_PASSWORD（公网�
 docker compose -f deploy/docker-compose.yml up -d
 ```
 
-新起来的 magpie 里还没有免费路线，开一次、重启 bot 就行（只有第一次要）：
+云端这条路上 bot 不启动 magpie（`MAGPIE_START=0`），所以免费池得自己在容器里弄一次：
 
 ```sh
 docker compose -f deploy/docker-compose.yml exec magpie \
   /magpie plugin add https://github.com/mu-zi-lee/magpie-our-free-model
+docker compose -f deploy/docker-compose.yml exec -it magpie \
+  /magpie plugin login our-free-model          # 菜单选 1，登录完按 Ctrl-D 退出
 docker compose -f deploy/docker-compose.yml exec magpie \
   /magpie group add free 'models=our-free-model/*' routing=smart
 docker compose -f deploy/docker-compose.yml restart bot
 ```
 
-免费池还要在浏览器里授权一次：容器里跑 `… exec magpie /magpie plugin login our-free-model`，用打印出来的临时地址（不用 Cloudflare 账号）打开控制台，步骤与限制见[插件的说明](https://github.com/mu-zi-lee/magpie-our-free-model)。
+`-it` 不能省：它要一个终端才弹菜单。插件第一次会下载自己的 Node 运行时，容器得能出网到 `nodejs.org`，下不来会报「自动安装 Node 失败」——那就走下面的自带 key。
 
 模型还没弄好时 bot 不会反复重启：打开网页端口会看到一页说明，写着差哪一步、该敲什么。
 
@@ -147,8 +149,8 @@ Telegram / 网页 ──▶ inbox（去重、排队）──▶ pi-durable 会�
 
 ## 已知的边界 / Honest limits
 
-- 免费池**按 IP 限量**，忙的时候会排队或失败；`group/free` 会自动换下一个模型，但它不能变出额度。
-- 免费池的授权过期、或上游改接口时，要再打开一次它的控制台（`magpie plugin login our-free-model`）。
+- 免费池**按 IP 限量**，忙的时候会排队或失败（`Our Free Model: Free usage limit reached` 就是这一条）；`group/free` 会自动换下一个模型，但它不能变出额度。
+- 免费池的登录过期、或上游改接口时，再跑一次 `magpie plugin login our-free-model`（先停 magpie），或者换自己的模型。
 - pi-durable 标着 *experimental*，升级时接口可能变；本项目钉在 `1.5.x`。
 - 一个数据目录只能有一个进程在跑（SQLite 单写者）。
 - 审批卡只认「是 / 否」这类短回答；开着卡的时候你说别的话，它会当作新消息。

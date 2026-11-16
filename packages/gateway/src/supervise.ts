@@ -58,7 +58,14 @@ export async function ensureGateway(
 		binary = await installMagpie({ dir: options.installDir, log: options.log });
 	}
 
-	const child = spawn(binary, ['serve'], { detached: true, stdio: 'ignore' });
+	// A magpie of our own listens where the bot was told to look for it, so a
+	// non-default MAGPIE_BASE_URL means something for the one we start too.
+	const address = new URL(config.baseUrl);
+	const child = spawn(binary, ['serve'], {
+		detached: true,
+		stdio: 'ignore',
+		env: { ...process.env, MAGPIE_ADDR: `${address.hostname}:${address.port}` },
+	});
 	child.unref();
 
 	while (Date.now() < deadline) {
