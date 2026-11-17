@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { Approvals, Inbox, Outbox, Owners, Schedules, Settings, Targets, openHostDb } from '../src/index.ts';
+import { Approvals, Chats, Inbox, Outbox, Owners, Schedules, Settings, Targets, attachmentsOf, openHostDb } from '../src/index.ts';
 
 const host = () => openHostDb(':memory:');
 
@@ -236,6 +236,95 @@ describe('schedule ownership and expiry', () => {
 		expect(approvals.pendingFor('c1')).toBeUndefined();
 		// The other conversation's card is untouched: its run is still going.
 		expect(approvals.pendingFor('c2')?.action).toBe('a2');
+		db.close();
+	});
+});
+
+describe('pictures in the inbox', () => {
+	it('keeps them with the row until it is answered, then lets them go', () => {
+		const db = host();
+		const inbox = new Inbox(db);
+		const image = { data: 'AAAA', mimeType: 'image/png' };
+		inbox.admit({ source: 's', sourceKey: '1', conversation: 'c1', text: '看图', attachments: [image] });
+		inbox.admit({ source: 's', sourceKey: '2', conversation: 'c1', text: '没图' });
+
+		const first = inbox.claim();
+		expect(first && attachmentsOf(first)).toEqual([image]);
+		expect(attachmentsOf(inbox.pendingFor('c1')[0]!)).toEqual([]);
+
+		inbox.finish(first!.id);
+		const stored = db.db.prepare(`SELECT attachments FROM inbox WHERE id = ?`).get(first!.id) as { attachments: string | null };
+		expect(stored.attachments).toBeNull();
+		expect(attachmentsOf({ attachments: 'not json' })).toEqual([]);
+		db.close();
+	});
+});
+
+describe('an older database', () => {
+	it('gets the columns added since, without losing its rows', async () => {
+		const { mkdtemp } = await import('node:fs/promises');
+		const { tmpdir } = await import('node:os');
+		const { join } = await import('node:path');
+		const { DatabaseSync } = await import('node:sqlite');
+		const path = join(await mkdtemp(join(tmpdir(), 'host-')), 'host.sqlite');
+		const old = new DatabaseSync(path);
+		old.exec(`CREATE TABLE inbox (id TEXT PRIMARY KEY, source TEXT NOT NULL, source_key TEXT NOT NULL, conversation TEXT NOT NULL, text TEXT NOT NULL, received_at INTEGER NOT NULL, status TEXT NOT NULL DEFAULT 'pending', UNIQUE (source, source_key));
+			CREATE TABLE outbox (id INTEGER PRIMARY KEY AUTOINCREMENT, conversation TEXT NOT NULL, channel TEXT NOT NULL, target TEXT NOT NULL, text TEXT NOT NULL, created_at INTEGER NOT NULL, status TEXT NOT NULL DEFAULT 'pending', attempts INTEGER NOT NULL DEFAULT 0, retry_at INTEGER, sent_at INTEGER, error TEXT);
+			INSERT INTO outbox (conversation, channel, target, text, created_at) VALUES ('c1', 'web', 't', '旧消息', 1);`);
+		old.close();
+
+		const db = openHostDb(path);
+		const outbox = new Outbox(db);
+		expect(outbox.next()).toMatchObject({ text: '旧消息', kind: null });
+		outbox.enqueue({ conversation: 'c1', channel: 'web', target: 't', text: '卡片', kind: 'approval' });
+		expect(outbox.next()).toMatchObject({ text: '卡片', kind: 'approval' });
+		expect(new Inbox(db).admit({ source: 's', sourceKey: '1', conversation: 'c1', text: 'x', attachments: [{ data: 'AA==', mimeType: 'image/png' }] })).toBe(true);
+		db.close();
+		// Opening it again changes nothing.
+		openHostDb(path).close();
+	});
+});
+
+describe('chats', () => {
+	it('lists pinned first, then the latest, and changes only what is given', () => {
+		const db = host();
+		const chats = new Chats(db);
+		chats.create({ conversation: 'c1', channel: 'web', owner: 'o', chat: 'a', title: 'A', titleState: 'user', at: 1 });
+		chats.create({ conversation: 'c2', channel: 'web', owner: 'o', chat: 'b', title: 'B', titleState: 'empty', at: 2 });
+		chats.create({ conversation: 'c3', channel: 'web', owner: 'other', chat: 'a', title: 'X', titleState: 'user', at: 3 });
+		expect(chats.list('web', 'o').map((row) => row.chat)).toEqual(['b', 'a']);
+
+		chats.update('c1', { pinned: true });
+		expect(chats.list('web', 'o').map((row) => row.chat)).toEqual(['a', 'b']);
+		chats.touch('c2', 10);
+		chats.update('c1', { pinned: false });
+		expect(chats.list('web', 'o').map((row) => row.chat)).toEqual(['b', 'a']);
+
+		expect(chats.update('c2', { model: 'm', thinking: true, title: 'B2', titleState: 'first' })).toMatchObject({
+			title: 'B2',
+			title_state: 'first',
+			model: 'm',
+			thinking: 1,
+			pinned: 0,
+		});
+		expect(chats.update('c2', { model: null })?.model).toBeNull();
+		expect(chats.get('web', 'other', 'a')?.conversation).toBe('c3');
+		expect(chats.remove('c2')).toBe(true);
+		expect(chats.byConversation('c2')).toBeUndefined();
+		expect(() => chats.create({ conversation: 'c9', channel: 'web', owner: 'o', chat: 'a', title: 'dup', titleState: 'user' })).toThrow();
+		db.close();
+	});
+});
+
+describe('targets', () => {
+	it('forgets a chat, so the same target starts a new conversation', () => {
+		const db = host();
+		const targets = new Targets(db);
+		targets.bind({ conversation: 'c1', channel: 'web', target: 't' });
+		targets.setAgentConversation('c1', 7);
+		targets.forget('c1');
+		expect(targets.get('c1')).toBeUndefined();
+		expect(targets.getByAgent(7)).toBeUndefined();
 		db.close();
 	});
 });

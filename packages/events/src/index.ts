@@ -1,7 +1,8 @@
 export { openHostDb, type HostDb } from './db.ts';
 export { Approvals, type ApprovalRequest, type ApprovalRow, type ApprovalStatus } from './approvals.ts';
-export { Inbox, type InboxRow, type IncomingEvent } from './inbox.ts';
-export { Outbox, type OutboxRow, type OutboxStatus, type OutgoingMessage } from './outbox.ts';
+export { Chats, type ChatChange, type ChatInput, type ChatRow, type TitleState } from './chats.ts';
+export { Inbox, attachmentsOf, type Attachment, type InboxRow, type IncomingEvent } from './inbox.ts';
+export { Outbox, type OutboxRow, type OutboxStatus, type OutgoingKind, type OutgoingMessage } from './outbox.ts';
 export { Schedules, type ScheduleInput, type ScheduleRow } from './schedule.ts';
 export { claimDataDir, clearDataDirLock, type DataDirLock } from './lock.ts';
 export { Owners, type Admission } from './owners.ts';

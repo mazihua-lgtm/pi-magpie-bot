@@ -8,7 +8,7 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join, resolve } from 'node:path';
-import { Bot } from '@pi-magpie-bot/brain';
+import { AppService, Bot } from '@pi-magpie-bot/brain';
 import { clearDataDirLock } from '@pi-magpie-bot/events';
 import { serveSetupPage, type SetupPageOptions, WebChannel } from '@pi-magpie-bot/channel-web';
 import {
@@ -448,6 +448,22 @@ if (!webDisabled) {
 		},
 		// A reopened tab gets the conversation back instead of an empty page.
 		history: (target) => bot.transcript('web', target),
+		// The native app's API. A key it saves is loaded by starting again: the
+		// Android service brings the process back in seconds.
+		app: new AppService(bot, {
+			vendors: VENDORS.map((vendor) => ({ preset: vendor.id, name: vendor.name, signupUrl: vendor.signup })),
+			// Same rule as the first-run page: a page others can reach takes a key
+			// only behind the password.
+			...(canSaveKey() && (['127.0.0.1', 'localhost', '::1'].includes(webHost) || env.WEB_PASSWORD)
+				? {
+						saveProvider: async (input: { preset: string; key: string }) => {
+							await saveKey(input);
+							return '加好了。助理正在重启载入新模型，几秒后就能用。';
+						},
+					}
+				: {}),
+			restart: () => void close('a model key was added, restarting'),
+		}),
 		onMessage: (event) => {
 			bot.ingest(event);
 		},
@@ -489,7 +505,7 @@ const stopLoop = bot.start(Number.isFinite(idle) && idle >= 1_000 ? idle : 30_00
 console.log(`[bot] model ${env.MAGPIE_MODEL ?? 'auto-picked'} via ${config.baseUrl}`);
 
 let closing = false;
-const close = async (signal: string) => {
+async function close(signal: string): Promise<void> {
 	if (closing) return;
 	closing = true;
 	console.log(`[bot] ${signal}, stopping`);
@@ -497,7 +513,7 @@ const close = async (signal: string) => {
 	for (const stop of shutdown) await stop();
 	await bot.close();
 	process.exit(0);
-};
+}
 
 process.on('SIGINT', () => void close('SIGINT'));
 process.on('SIGTERM', () => void close('SIGTERM'));

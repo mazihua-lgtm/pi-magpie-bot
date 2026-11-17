@@ -59,6 +59,14 @@ export class Targets {
 		};
 	}
 
+	/**
+	 * Forget a chat: the next message to the same target starts a new
+	 * conversation instead of continuing the one that was deleted.
+	 */
+	forget(conversation: string): void {
+		this.host.db.prepare(`DELETE FROM conversations WHERE id = ?`).run(conversation);
+	}
+
 	setAgentConversation(conversation: string, agentConversation: string | number): void {
 		this.host.db
 			.prepare(`UPDATE conversations SET agent_conversation = ?, updated_at = ? WHERE id = ?`)

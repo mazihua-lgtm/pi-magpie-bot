@@ -1,6 +1,6 @@
 import { defineExtension, defineTool, section, type Extension } from '@earendil-works/pi-durable';
 import { obj, opt, str } from '@earendil-works/pi-schema';
-import type { MemoryStore } from '@pi-magpie-bot/memory';
+import type { ConversationKey, MemoryStore } from '@pi-magpie-bot/memory';
 
 /** A tool's answer, as the transcript stores it. */
 const reply = (text: string, isError = false) => ({
@@ -11,8 +11,16 @@ const reply = (text: string, isError = false) => ({
 /**
  * Memory as tools the model reaches for, plus one prompt section that only
  * carries the index. The notes themselves stay on disk until asked for.
+ *
+ * `scope` says whose notes a conversation reads and writes; without it, each
+ * conversation keeps its own. The bot passes one that gives every chat of the
+ * same person the same notes.
  */
-export function createMemoryExtension(store: MemoryStore): Extension {
+export function createMemoryExtension(
+	store: MemoryStore,
+	scope: (conversationId: number) => ConversationKey | Promise<ConversationKey> = (conversationId) => conversationId,
+): Extension {
+	const key = (conversationId: unknown) => scope(Number(conversationId));
 	return defineExtension({
 		name: 'memory',
 		tools: [
@@ -25,7 +33,7 @@ export function createMemoryExtension(store: MemoryStore): Extension {
 					content: str({ description: 'The fact, in full sentences.' }),
 				}),
 				async execute(args, api) {
-					await store.writeNote(api.conversationId, args.name, args.content);
+					await store.writeNote(await key(api.conversationId), args.name, args.content);
 					return reply(`remembered "${args.name}"`);
 				},
 			}),
@@ -34,7 +42,7 @@ export function createMemoryExtension(store: MemoryStore): Extension {
 				description: 'Read a saved note in full, by the name the memory index shows.',
 				parameters: obj({ name: str() }),
 				async execute(args, api) {
-					const content = await store.readNote(api.conversationId, args.name);
+					const content = await store.readNote(await key(api.conversationId), args.name);
 					return reply(content || `no note named "${args.name}"`);
 				},
 			}),
@@ -43,7 +51,7 @@ export function createMemoryExtension(store: MemoryStore): Extension {
 				description: 'Find notes by what they say, for when the index is not enough.',
 				parameters: obj({ query: str() }),
 				async execute(args, api) {
-					const hits = await store.search(api.conversationId, args.query);
+					const hits = await store.search(await key(api.conversationId), args.query);
 					if (hits.length === 0) return reply('nothing found');
 					return reply(hits.map((hit) => `${hit.name}\n${hit.snippet}`).join('\n\n'));
 				},
@@ -51,10 +59,8 @@ export function createMemoryExtension(store: MemoryStore): Extension {
 		],
 		sections: [
 			section('memory', async (input) => {
-				const [instructions, index] = await Promise.all([
-					store.readInstructions(input.conversationId),
-					store.readIndex(input.conversationId),
-				]);
+				const owner = await key(input.conversationId);
+				const [instructions, index] = await Promise.all([store.readInstructions(owner), store.readIndex(owner)]);
 				const parts: string[] = [];
 				if (instructions.trim()) parts.push(`What the user asked you to always do:\n${instructions.trim()}`);
 				if (index.trim()) parts.push(`Your saved notes (read one with memory_read):\n${index.trim()}`);

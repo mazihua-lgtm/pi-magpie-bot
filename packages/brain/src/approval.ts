@@ -9,6 +9,10 @@ export interface ApprovalGateOptions {
 	/** Poll interval; the row is the state, so a restart only loses the wait. */
 	pollMs?: number;
 	sleep?: (ms: number) => Promise<void>;
+	/** A card went out: for a surface that shows it as buttons rather than words. */
+	onAsked?: (card: { conversation: string; id: string; action: string; expiresAt: number }) => void;
+	/** The card was answered, refused or ran out of time, whichever way that happened. */
+	onSettled?: (card: { conversation: string; id: string; status: 'allowed' | 'denied' | 'expired' }) => void;
 }
 
 export interface ApprovalDecision {
@@ -40,21 +44,30 @@ export async function askApproval(
 		channel: chat.channel,
 		target: chat.target,
 		text: `⚠️ 需要你同意才能继续 / needs your approval:\n${action}\n\n回复「是」执行，回「否」取消 / reply "yes" to run it, "no" to drop it（5 分钟内不回复即取消 / dropped after 5 minutes）`,
+		// Marked, so a surface with real buttons can leave the words out.
+		kind: 'approval',
 	});
 
 	const sleep = options.sleep ?? ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)));
 	const deadline = Date.now() + (options.timeoutMs ?? 5 * 60_000);
 	const pollMs = options.pollMs ?? 1_000;
+	options.onAsked?.({ conversation: chat.conversation, id, action, expiresAt: deadline });
+	// Every way a card can end passes through this loop (a typed "是", a button,
+	// the run torn down, the deadline), so this is the one place that says so.
+	const settled = (status: 'allowed' | 'denied' | 'expired', decision: ApprovalDecision): ApprovalDecision => {
+		options.onSettled?.({ conversation: chat.conversation, id, status });
+		return decision;
+	};
 
 	for (;;) {
 		const row = options.approvals.get(id);
-		if (!row) return { allowed: false, detail: 'the question disappeared' };
-		if (row.status === 'allowed') return { allowed: true, detail: 'the user approved it' };
-		if (row.status === 'denied') return { allowed: false, detail: 'the user refused it' };
-		if (row.status === 'expired') return { allowed: false, detail: 'nobody answered in time' };
+		if (!row) return settled('expired', { allowed: false, detail: 'the question disappeared' });
+		if (row.status === 'allowed') return settled('allowed', { allowed: true, detail: 'the user approved it' });
+		if (row.status === 'denied') return settled('denied', { allowed: false, detail: 'the user refused it' });
+		if (row.status === 'expired') return settled('expired', { allowed: false, detail: 'nobody answered in time' });
 		if (Date.now() >= deadline) {
 			options.approvals.decide(id, 'expired');
-			return { allowed: false, detail: 'nobody answered in time' };
+			return settled('expired', { allowed: false, detail: 'nobody answered in time' });
 		}
 		await sleep(pollMs);
 	}

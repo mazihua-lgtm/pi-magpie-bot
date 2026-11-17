@@ -1,11 +1,11 @@
-import { mkdir, readFile, readdir, rename, writeFile } from 'node:fs/promises';
+import { cp, mkdir, readFile, readdir, rename, stat, unlink, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
 /**
- * Memory is a directory per conversation on disk, so it outlives any process
- * and a user can read and edit it with a text editor.
+ * Memory is a directory per scope on disk (one person, across all their chats),
+ * so it outlives any process and a user can read and edit it with a text editor.
  *
- * Layout under `<root>/<conversation>/`:
+ * Layout under `<root>/<scope>/`:
  *   instructions.md   what the user told the agent to always do (loaded every run)
  *   notes/index.md    one line per note (loaded every run)
  *   notes/<slug>.md   one fact each (loaded only when the agent asks)
@@ -118,6 +118,44 @@ export class MemoryStore {
 		});
 	}
 
+	/**
+	 * Forget one note: its file and its line in the index. False when there was
+	 * no such note.
+	 */
+	async deleteNote(conversationId: ConversationKey, name: string): Promise<boolean> {
+		const slug = MemoryStore.slug(name);
+		const dir = this.dir(conversationId);
+		return await this.serialized(conversationId, async () => {
+			let existed = true;
+			try {
+				await unlink(join(dir, 'notes', `${slug}.md`));
+			} catch {
+				existed = false;
+			}
+			const index = await this.readIndex(conversationId);
+			const lines = index.split('\n').filter((line) => line.trim());
+			const kept = lines.filter((line) => !line.startsWith(`- ${slug}:`));
+			if (kept.length !== lines.length) {
+				existed = true;
+				await this.write(join(dir, 'notes', 'index.md'), kept.length > 0 ? `${kept.join('\n')}\n` : '');
+			}
+			return existed;
+		});
+	}
+
+	/**
+	 * Start `to` as a copy of `from`, once: when memory moves to a wider scope
+	 * (one person instead of one chat), the notes of the old scope come along.
+	 * Nothing happens when `to` already exists or `from` does not.
+	 */
+	async adopt(from: ConversationKey, to: ConversationKey): Promise<boolean> {
+		const source = this.dir(from);
+		const target = this.dir(to);
+		if (source === target || (await exists(target)) || !(await exists(source))) return false;
+		await cp(source, target, { recursive: true, errorOnExist: false, force: false });
+		return true;
+	}
+
 	async listNotes(conversationId: ConversationKey): Promise<string[]> {
 		try {
 			const files = await readdir(join(this.dir(conversationId), 'notes'));
@@ -147,6 +185,15 @@ export class MemoryStore {
 
 	writeTask(conversationId: ConversationKey, name: string, text: string): Promise<void> {
 		return this.write(join(this.dir(conversationId), 'tasks', `${MemoryStore.slug(name)}.md`), text);
+	}
+}
+
+async function exists(path: string): Promise<boolean> {
+	try {
+		await stat(path);
+		return true;
+	} catch {
+		return false;
 	}
 }
 

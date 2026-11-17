@@ -56,6 +56,11 @@ export class Approvals {
 			.get(conversation) as ApprovalRow | undefined;
 	}
 
+	/** Every card still waiting, oldest first: for a surface that reconnects and must show them again. */
+	pending(): ApprovalRow[] {
+		return this.host.db.prepare(`SELECT * FROM approvals WHERE status = 'pending' ORDER BY created_at`).all() as unknown as ApprovalRow[];
+	}
+
 	/** The oldest question this text answers, if it answers one at all. */
 	answer(conversation: string, text: string): { row: ApprovalRow; allowed: boolean } | undefined {
 		const row = this.pendingFor(conversation);

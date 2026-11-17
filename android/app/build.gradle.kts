@@ -1,6 +1,7 @@
 plugins {
 	id("com.android.application")
 	id("org.jetbrains.kotlin.android")
+	id("org.jetbrains.kotlin.plugin.compose")
 }
 
 android {
@@ -20,15 +21,18 @@ android {
 		// written when it last unpacked, and re-unpacks when they differ. Without
 		// that, an updated APK keeps running the old node, magpie and bot code,
 		// and an update looks like it did nothing.
-		versionCode = 2
-		versionName = "0.1.1"
+		versionCode = 3
+		versionName = "0.2.0"
 		// The environment inside is linux-arm64: one payload, so one kind of phone.
 		ndk { abiFilters += listOf("arm64-v8a") }
 	}
 
 	buildTypes {
 		release {
-			isMinifyEnabled = false
+			// On, for the icon set: without it every icon Material has ships in the
+			// APK. The rules keep only what the payload reader needs by name.
+			isMinifyEnabled = true
+			proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
 			// A key made here, not one from a store: the APK is handed out from
 			// GitHub, and nothing about this app needs Play to sign it.
 			signingConfig = signingConfigs.getByName("debug")
@@ -44,6 +48,16 @@ android {
 		jvmTarget = "17"
 	}
 
+	buildFeatures {
+		compose = true
+		buildConfig = true
+	}
+
+	lint {
+		// 28 on purpose (see targetSdk above), and the APK is not for Play.
+		disable += "ExpiredTargetSdkVersion"
+	}
+
 	androidResources {
 		// The payload is already a gzip, and AAPT2 takes a `.gz` asset apart and
 		// stores the tar inside it - three times the size, and no longer the file
@@ -57,7 +71,19 @@ android {
 }
 
 dependencies {
-	// The one dependency: a tarball reader that keeps symlinks, which is how
-	// node_modules holds the workspace packages together.
+	// A tarball reader that keeps symlinks, which is how node_modules holds the
+	// workspace packages together.
 	implementation("org.apache.commons:commons-compress:1.27.1")
+
+	// The screens. Pinned to the last line that builds against SDK 35.
+	implementation(platform("androidx.compose:compose-bom:2024.12.01"))
+	implementation("androidx.compose.ui:ui")
+	implementation("androidx.compose.foundation:foundation")
+	implementation("androidx.compose.material3:material3")
+	implementation("androidx.compose.material:material-icons-extended")
+	implementation("androidx.activity:activity-compose:1.9.3")
+	implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.8.7")
+	implementation("androidx.lifecycle:lifecycle-runtime-compose:2.8.7")
+	implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
+	debugImplementation("androidx.compose.ui:ui-tooling")
 }

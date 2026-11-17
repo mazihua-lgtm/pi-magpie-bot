@@ -1,6 +1,12 @@
 import { randomUUID } from 'node:crypto';
 import type { HostDb } from './db.ts';
 
+/** A picture sent with a message, as the model takes it: base64 and its type. */
+export interface Attachment {
+	data: string;
+	mimeType: string;
+}
+
 export interface IncomingEvent {
 	/** Which chat platform it came from. */
 	source: string;
@@ -9,6 +15,8 @@ export interface IncomingEvent {
 	/** Which conversation (pi-durable) this event belongs to. */
 	conversation: string;
 	text: string;
+	/** Pictures that came with it; kept with the row until it is answered. */
+	attachments?: Attachment[];
 }
 
 export interface InboxRow {
@@ -19,6 +27,24 @@ export interface InboxRow {
 	text: string;
 	received_at: number;
 	status: 'pending' | 'running' | 'done';
+	/** JSON of `Attachment[]`, or null; read it with `attachmentsOf`. */
+	attachments: string | null;
+}
+
+/** The pictures of a row, or none: a row the column is unreadable in still has its words. */
+export function attachmentsOf(row: Pick<InboxRow, 'attachments'>): Attachment[] {
+	if (!row.attachments) return [];
+	try {
+		const parsed: unknown = JSON.parse(row.attachments);
+		return Array.isArray(parsed)
+			? parsed.filter(
+					(item): item is Attachment =>
+						typeof item === 'object' && item !== null && typeof item.data === 'string' && typeof item.mimeType === 'string',
+				)
+			: [];
+	} catch {
+		return [];
+	}
 }
 
 /**
@@ -37,10 +63,18 @@ export class Inbox {
 	admit(event: IncomingEvent): boolean {
 		const result = this.host.db
 			.prepare(
-				`INSERT OR IGNORE INTO inbox (id, source, source_key, conversation, text, received_at)
-				 VALUES (?, ?, ?, ?, ?, ?)`,
+				`INSERT OR IGNORE INTO inbox (id, source, source_key, conversation, text, received_at, attachments)
+				 VALUES (?, ?, ?, ?, ?, ?, ?)`,
 			)
-			.run(randomUUID(), event.source, event.sourceKey, event.conversation, event.text, Date.now());
+			.run(
+				randomUUID(),
+				event.source,
+				event.sourceKey,
+				event.conversation,
+				event.text,
+				Date.now(),
+				event.attachments && event.attachments.length > 0 ? JSON.stringify(event.attachments) : null,
+			);
 		return Number(result.changes) > 0;
 	}
 
@@ -54,8 +88,9 @@ export class Inbox {
 		return { ...row, status: 'running' };
 	}
 
+	/** Done with it. The pictures go: they are in the conversation now, and megabytes each. */
 	finish(id: string): void {
-		this.host.db.prepare(`UPDATE inbox SET status = 'done' WHERE id = ?`).run(id);
+		this.host.db.prepare(`UPDATE inbox SET status = 'done', attachments = NULL WHERE id = ?`).run(id);
 	}
 
 	/**

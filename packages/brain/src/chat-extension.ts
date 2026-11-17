@@ -25,6 +25,8 @@ export interface ChatExtensionOptions {
 	now?: () => number;
 	/** Called whenever the schedule table changed, so the precise timer is rearmed. */
 	onSchedulesChanged?: () => void;
+	/** Called after a message went into the outbox, so it is delivered now rather than at the next tick. */
+	onEnqueued?: () => void;
 }
 
 /**
@@ -47,6 +49,7 @@ export function createChatExtension(options: ChatExtensionOptions): Extension {
 					const chat = options.targets.getByAgent(api.conversationId);
 					if (!chat) return reply('this conversation has no chat to send to', true);
 					options.outbox.enqueue({ conversation: chat.conversation, channel: chat.channel, target: chat.target, text: args.text });
+					options.onEnqueued?.();
 					return reply('sent');
 				},
 			}),

@@ -1,313 +1,100 @@
 package app.pimagpie.bot
 
 import android.Manifest
-import android.app.Activity
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.Color
-import android.graphics.Typeface
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
-import android.os.Handler
-import android.os.Looper
 import android.os.PowerManager
 import android.provider.Settings
-import android.util.TypedValue
-import android.view.Gravity
-import android.view.View
-import android.view.ViewGroup.LayoutParams.MATCH_PARENT
-import android.view.ViewGroup.LayoutParams.WRAP_CONTENT
-import android.webkit.CookieManager
-import android.webkit.WebResourceRequest
-import android.webkit.WebView
-import android.webkit.WebViewClient
-import android.widget.Button
-import android.widget.FrameLayout
-import android.widget.LinearLayout
-import android.widget.ProgressBar
-import android.widget.ScrollView
-import android.widget.TextView
-import java.net.HttpURLConnection
-import java.net.URL
+import androidx.activity.ComponentActivity
+import androidx.activity.SystemBarStyle
+import androidx.activity.compose.BackHandler
+import androidx.activity.compose.setContent
+import androidx.activity.enableEdgeToEdge
+import androidx.activity.viewModels
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.DrawerValue
+import androidx.compose.material3.ModalNavigationDrawer
+import androidx.compose.material3.Snackbar
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.Text
+import androidx.compose.material3.rememberDrawerState
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.unit.dp
+import androidx.core.view.WindowCompat
+import app.pimagpie.bot.ui.AppTheme
+import app.pimagpie.bot.ui.BootScreen
+import app.pimagpie.bot.ui.ChatScreen
+import app.pimagpie.bot.ui.Drawer
+import app.pimagpie.bot.ui.KeyScreen
+import app.pimagpie.bot.ui.LocalPalette
+import app.pimagpie.bot.ui.MemoryScreen
+import app.pimagpie.bot.ui.SettingsScreen
+import app.pimagpie.bot.ui.TasksScreen
+import kotlinx.coroutines.launch
 
 /**
- * Two screens and nothing else: the chat this app is, and the wait while the
- * environment is unpacked. A first run that needs a terminal is not a first run
- * a beginner can do.
+ * The app is this one window: the wait while the environment comes up, then the
+ * chat, its list, and the pages beside it. The assistant itself runs in
+ * [AssistantService]; this only talks to it.
  */
-class MainActivity : Activity() {
-	private lateinit var stack: FrameLayout
-	private lateinit var waiting: LinearLayout
-	private lateinit var progressBar: ProgressBar
-	private lateinit var status: TextView
-	private lateinit var log: TextView
-	private lateinit var start: Button
-	private lateinit var body: TextView
-	private var web: WebView? = null
-	private val handler = Handler(Looper.getMainLooper())
+class MainActivity : ComponentActivity() {
+	private val model: AppModel by viewModels()
 
 	override fun onCreate(savedInstanceState: Bundle?) {
+		enableEdgeToEdge(
+			statusBarStyle = SystemBarStyle.auto(Color.TRANSPARENT, Color.TRANSPARENT),
+			navigationBarStyle = SystemBarStyle.auto(Color.TRANSPARENT, Color.TRANSPARENT),
+		)
 		super.onCreate(savedInstanceState)
-		build()
 		askNotifications()
-
-		if (Payload.installed(this)) {
-			// Already set up: this is the everyday launch. Saying "first time, about
-			// 300 MB" here would be a lie, and leaving a big "start preparing" button
-			// on screen would make people tap it every time.
-			body.text = getString(R.string.setup_running)
-			start.visibility = View.GONE
-			AssistantService.start(this)
-			waitForAssistant()
-		} else {
-			showWaiting()
+		openFrom(intent)
+		setContent {
+			AppTheme(model.themeMode) { Root(model) }
 		}
+	}
+
+	override fun onNewIntent(intent: Intent) {
+		super.onNewIntent(intent)
+		openFrom(intent)
+	}
+
+	/** A notification names the chat it came from. */
+	private fun openFrom(intent: Intent?) {
+		val chat = intent?.getStringExtra(EXTRA_CHAT) ?: return
+		model.open(chat)
 	}
 
 	override fun onResume() {
 		super.onResume()
 		App.onScreen = true
-		Progress.listener = { text, percent -> handler.post { render(text, percent) } }
 	}
 
 	override fun onPause() {
 		App.onScreen = false
-		Progress.listener = null
 		super.onPause()
-	}
-
-	private fun build() {
-		stack = FrameLayout(this)
-		waiting = LinearLayout(this).apply {
-			orientation = LinearLayout.VERTICAL
-			setBackgroundColor(Color.WHITE)
-			setPadding(dp(24), dp(40), dp(24), dp(24))
-		}
-
-		val title = TextView(this).apply {
-			text = getString(R.string.setup_title)
-			setTextSize(TypedValue.COMPLEX_UNIT_SP, 26f)
-			setTextColor(Color.parseColor("#1A1A1A"))
-			setTypeface(typeface, Typeface.BOLD)
-		}
-		body = TextView(this).apply {
-			text = getString(R.string.setup_body)
-			setTextSize(TypedValue.COMPLEX_UNIT_SP, 15f)
-			setTextColor(Color.parseColor("#444444"))
-			setLineSpacing(dp(6).toFloat(), 1f)
-			setPadding(0, dp(16), 0, dp(20))
-		}
-		progressBar = ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal).apply {
-			max = 100
-			visibility = View.GONE
-		}
-		status = TextView(this).apply {
-			text = ""
-			setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f)
-			setTextColor(Color.parseColor("#2F7CF6"))
-			setPadding(0, dp(10), 0, dp(10))
-		}
-		log = TextView(this).apply {
-			text = ""
-			setTextSize(TypedValue.COMPLEX_UNIT_SP, 11f)
-			typeface = Typeface.MONOSPACE
-			setTextColor(Color.parseColor("#666666"))
-			setPadding(0, dp(8), 0, dp(8))
-			visibility = View.GONE
-		}
-		val logBox = ScrollView(this).apply {
-			addView(log, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT))
-			visibility = View.GONE
-			layoutParams = LinearLayout.LayoutParams(MATCH_PARENT, 0, 1f)
-		}
-		start = Button(this).apply {
-			text = getString(R.string.setup_button)
-			setOnClickListener { begin() }
-		}
-
-		waiting.addView(title)
-		waiting.addView(body)
-		waiting.addView(progressBar, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT))
-		waiting.addView(status)
-		waiting.addView(logBox)
-		waiting.addView(start, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply { topMargin = dp(16) })
-
-		// The log is for when something is wrong, not a thing to show a beginner.
-		title.setOnLongClickListener {
-			val showing = logBox.visibility == View.VISIBLE
-			logBox.visibility = if (showing) View.GONE else View.VISIBLE
-			if (!showing) log.text = Logs.tail()
-			true
-		}
-
-		stack.addView(waiting, FrameLayout.LayoutParams(MATCH_PARENT, MATCH_PARENT))
-		setContentView(stack)
-
-		if (Progress.line.isNotEmpty()) render(Progress.line, Progress.percent)
-		else status.text = if (Payload.installed(this)) getString(R.string.starting) else ""
-	}
-
-	/** The button that starts everything: unpack, then run. */
-	private fun begin() {
-		start.visibility = View.GONE
-		progressBar.visibility = View.VISIBLE
-		progressBar.isIndeterminate = true
-		status.text = getString(R.string.installing)
-		AssistantService.start(this)
-		waitForAssistant()
-	}
-
-	private fun showWaiting() {
-		start.visibility = View.VISIBLE
-	}
-
-	private fun render(text: String, percent: Int) {
-		status.text = text
-		if (Progress.failed) {
-			// A spinner with no way out is the worst thing this screen can do: the
-			// only fix a person has is to kill and reopen, and it fails the same way.
-			progressBar.visibility = View.GONE
-			start.text = getString(R.string.setup_retry)
-			start.visibility = View.VISIBLE
-			start.setOnClickListener { begin() }
-		} else if (percent >= 0 && !Payload.installed(this)) {
-			progressBar.visibility = View.VISIBLE
-			progressBar.isIndeterminate = false
-			progressBar.progress = percent
-		}
-		if (log.visibility == View.VISIBLE) log.text = Logs.tail()
-	}
-
-	/**
-	 * Polls the loopback until something answers, then shows it. What answers may
-	 * be the chat or the page that takes a key, and both belong in this window: a
-	 * spinner in front of a page the phone is already serving is a dead end.
-	 */
-	private fun waitForAssistant() {
-		progressBar.visibility = View.VISIBLE
-		progressBar.isIndeterminate = true
-		status.text = getString(R.string.starting)
-
-		Thread {
-			// Ten minutes is a slow first run on an old phone; past that something
-			// is wrong, and the log is what says what.
-			repeat(600) {
-				if (isFinishing) return@Thread
-				if (answers()) {
-					val session = session()
-					handler.post { showPage(session) }
-					return@Thread
-				}
-				Thread.sleep(1_000)
-			}
-			// Ten minutes gone: say it in a sentence and give the button back. The
-			// English log is still behind a long press for whoever can use it.
-			handler.post {
-				Progress.failed = true
-				Progress.line = getString(R.string.setup_timeout)
-				render(getString(R.string.setup_timeout), -1)
-			}
-		}.start()
-	}
-
-	/**
-	 * One session for both of us: the page and the notification watcher have to be
-	 * the same conversation, or a reminder would land in a room nobody is in. The
-	 * server is asked first, so a session from before a reinstall is replaced
-	 * rather than believed.
-	 */
-	private fun session(): String? {
-		val prefs = getSharedPreferences("bot", MODE_PRIVATE)
-		return try {
-			val connection = URL("${Runner.BASE}/").openConnection() as HttpURLConnection
-			connection.connectTimeout = 2_000
-			connection.readTimeout = 2_000
-			connection.requestMethod = "GET"
-			connection.responseCode
-			val header = connection.getHeaderFields()["Set-Cookie"]?.firstOrNull()
-			connection.disconnect()
-			val sid = header?.substringAfter("sid=", "")?.substringBefore(";")
-			if (sid.isNullOrEmpty()) prefs.getString(AssistantService.SESSION, null)
-			else {
-				prefs.edit().putString(AssistantService.SESSION, sid).apply()
-				sid
-			}
-		} catch (_: Exception) {
-			prefs.getString(AssistantService.SESSION, null)
-		}
-	}
-
-	private fun answers(): Boolean = try {
-		val connection = URL("${Runner.BASE}/healthz").openConnection() as HttpURLConnection
-		connection.connectTimeout = 1_000
-		connection.readTimeout = 1_000
-		val ok = connection.responseCode == 200
-		connection.disconnect()
-		ok
-	} catch (_: Exception) {
-		false
-	}
-
-	private fun showPage(session: String?) {
-		if (web != null || isFinishing) return
-		progressBar.visibility = View.GONE
-
-		val view = WebView(this).apply {
-			settings.javaScriptEnabled = true
-			settings.domStorageEnabled = true
-			settings.setSupportZoom(false)
-			settings.builtInZoomControls = false
-			settings.mediaPlaybackRequiresUserGesture = true
-			setBackgroundColor(Color.WHITE)
-			webViewClient = object : WebViewClient() {
-				override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
-					val url = request.url
-					if (url.host == "127.0.0.1" || url.host == "localhost") return false
-					// A link the user tapped belongs in the browser they trust.
-					startActivity(Intent(Intent.ACTION_VIEW, url))
-					return true
-				}
-			}
-		}
-
-		if (session != null) cookie(session)
-
-		web = view
-		stack.removeAllViews()
-		stack.addView(view, FrameLayout.LayoutParams(MATCH_PARENT, MATCH_PARENT))
-		view.loadUrl(Runner.BASE)
-
-		// The page that takes a key has no session yet; it gets one when the key
-		// turns the chat on, and that is the moment this becomes the chat.
-		if (session == null) follow()
-
-		askBattery()
-	}
-
-	private fun cookie(session: String) {
-		CookieManager.getInstance().apply {
-			setAcceptCookie(true)
-			setCookie(Runner.BASE, "sid=$session; Path=/")
-			flush()
-		}
-	}
-
-	/** Watches for the session the setup page has not given out yet. */
-	private fun follow() {
-		Thread {
-			while (!isFinishing) {
-				val session = session()
-				if (session != null) {
-					handler.post {
-						cookie(session)
-						web?.reload()
-					}
-					return@Thread
-				}
-				Thread.sleep(5_000)
-			}
-		}.start()
 	}
 
 	private fun askNotifications() {
@@ -317,31 +104,88 @@ class MainActivity : Activity() {
 	}
 
 	/**
-	 * Asked once, in the user's own words: without it Android closes the assistant
-	 * to save power, and a reminder that never came is worse than no reminder.
+	 * Asked once: without it Android closes the assistant to save power, and a
+	 * reminder that never came is worse than no reminder.
 	 */
-	private fun askBattery() {
+	fun askBattery() {
 		val prefs = getSharedPreferences("bot", MODE_PRIVATE)
 		if (prefs.getBoolean("askedBattery", false)) return
 		val power = getSystemService(PowerManager::class.java)
 		if (power.isIgnoringBatteryOptimizations(packageName)) return
 		prefs.edit().putBoolean("askedBattery", true).apply()
-		try {
-			startActivity(
-				Intent(
-					Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,
-					Uri.parse("package:$packageName"),
-				),
-			)
-		} catch (_: Exception) {
-			// A phone that does not offer it is a phone that will not be asked again.
+		runCatching {
+			startActivity(Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, Uri.parse("package:$packageName")))
 		}
 	}
 
-	override fun onBackPressed() {
-		val view = web
-		if (view != null && view.canGoBack()) view.goBack() else super.onBackPressed()
+	companion object {
+		const val EXTRA_CHAT = "chat"
 	}
+}
 
-	private fun dp(value: Int): Int = (value * resources.displayMetrics.density).toInt()
+@Composable
+private fun Root(model: AppModel) {
+	val palette = LocalPalette.current
+	// The bars' icons follow the app's own theme, which may differ from the system's.
+	val view = LocalView.current
+	SideEffect {
+		val window = (view.context as? android.app.Activity)?.window ?: return@SideEffect
+		WindowCompat.getInsetsController(window, view).apply {
+			isAppearanceLightStatusBars = !palette.dark
+			isAppearanceLightNavigationBars = !palette.dark
+		}
+	}
+	val snackbar = remember { SnackbarHostState() }
+	LaunchedEffect(Unit) {
+		model.toasts.collect {
+			snackbar.currentSnackbarData?.dismiss()
+			snackbar.showSnackbar(it)
+		}
+	}
+	Box(Modifier.fillMaxSize().background(palette.ground)) {
+		AnimatedContent(
+			targetState = when (model.boot) {
+				is Boot.Preparing -> 0
+				Boot.NeedsKey -> 1
+				Boot.Ready -> 2
+			},
+			transitionSpec = { fadeIn() togetherWith fadeOut() },
+			label = "boot",
+		) { stage ->
+			when (stage) {
+				0 -> (model.boot as? Boot.Preparing)?.let { BootScreen(model, it) }
+				1 -> KeyScreen(model)
+				else -> Main(model)
+			}
+		}
+		SnackbarHost(snackbar, Modifier.align(Alignment.BottomCenter).navigationBarsPadding().imePadding().padding(start = 16.dp, end = 16.dp, bottom = 96.dp)) {
+			Snackbar(shape = RoundedCornerShape(14.dp), containerColor = palette.ink, contentColor = palette.onInk) { Text(it.visuals.message) }
+		}
+	}
+}
+
+@Composable
+private fun Main(model: AppModel) {
+	val drawer = rememberDrawerState(DrawerValue.Closed)
+	val scope = rememberCoroutineScope()
+	val activity = LocalContext.current as? MainActivity
+	LaunchedEffect(Unit) { activity?.askBattery() }
+
+	BackHandler(drawer.isOpen) { scope.launch { drawer.close() } }
+	BackHandler(!drawer.isOpen && model.screen != Screen.Chat) { model.screen = Screen.Chat }
+
+	ModalNavigationDrawer(
+		drawerState = drawer,
+		gesturesEnabled = model.screen == Screen.Chat || drawer.isOpen,
+		drawerContent = { Drawer(model) { scope.launch { drawer.close() } } },
+	) {
+		AnimatedContent(model.screen, transitionSpec = { fadeIn() togetherWith fadeOut() }, label = "screen") { screen ->
+			when (screen) {
+				Screen.Chat -> ChatScreen(model, onMenu = { scope.launch { drawer.open() } })
+				Screen.Tasks -> TasksScreen(model)
+				Screen.Memory -> MemoryScreen(model)
+				Screen.Settings -> SettingsScreen(model)
+			}
+		}
+	}
 }

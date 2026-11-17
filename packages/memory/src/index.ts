@@ -1,1 +1,1 @@
-export { MemoryStore } from './store.ts';
+export { MemoryStore, type ConversationKey } from './store.ts';
