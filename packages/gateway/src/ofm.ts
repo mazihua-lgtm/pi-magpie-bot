@@ -2,11 +2,11 @@
  * The free models, as a local OpenAI-compatible service behind magpie.
  *
  * A companion service (a slimmed copy of dsh-our-free-model's standalone
- * gateway, shipped inside the Android payload) serves a changing list of free
- * models on loopback. magpie connects to it as an ordinary custom provider.
- * The clever part is left to magpie: `provider refresh-every` makes the gateway
- * re-fetch the model list on a schedule, and a smart routing group falls over
- * when one lane runs out of quota. When the service is unreachable the usual
+ * gateway, shipped inside the Android payload) serves free models on loopback.
+ * Between it and magpie sits a small proxy (scripts/ofm-proxy.mjs) that offers
+ * one stable model and retries the next free lane when one runs out of quota:
+ * a gateway that sees a single lane's 429 locks the whole provider, refusing
+ * even the lanes that still work. When either process is unreachable the usual
  * key page takes over — the free pool is a convenience, not a single point of
  * failure.
  */
@@ -20,17 +20,15 @@ const run = promisify(execFile);
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 /** The id magpie knows this provider by, and the head of its model ids. */
-export const OFM_PROVIDER = 'ofm';
-export const OFM_PORT = 18_900;
-export const OFM_BASE = `http://127.0.0.1:${OFM_PORT}`;
+const OFM_PROVIDER = 'ofm';
+const OFM_PORT = 18_900;
 /** The stable model the proxy offers and agents pick. */
 export const OFM_STABLE_MODEL = 'free';
 /** The proxy sits between magpie and the upstream service, hiding lane 429s. */
-export const OFM_PROXY_PORT = 18_901;
-export const OFM_PROXY_BASE = `http://127.0.0.1:${OFM_PROXY_PORT}`;
+const OFM_PROXY_PORT = 18_901;
 
 export interface OfmRouteOptions {
-	/** magpie's CLI, for registering the provider and its routing group. */
+	/** magpie's CLI, for registering the provider. */
 	binary: string;
 	/** Node, to run the standalone service with (no Bun needed on a phone). */
 	node?: string;

@@ -13,4 +13,4 @@ export {
 } from './install.ts';
 export { createMagpieProvider, openModels, toPiModel } from './provider.ts';
 export { ensureGateway, findMagpieBinary } from './supervise.ts';
-export { ensureOfmRoute, OFM_BASE, OFM_PORT, OFM_PROVIDER, OFM_STABLE_MODEL } from './ofm.ts';
+export { ensureOfmRoute } from './ofm.ts';

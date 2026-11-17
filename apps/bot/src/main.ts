@@ -26,7 +26,6 @@ import {
 	hasConfiguredModel,
 	installMagpie,
 	listModels,
-	OFM_PROVIDER,
 } from '@pi-magpie-bot/gateway';
 import { VENDORS } from './vendors.ts';
 
