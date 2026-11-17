@@ -23,6 +23,8 @@ export interface ChatExtensionOptions {
 	targets: Targets;
 	/** Injected so tests can fire "in 5 minutes" without waiting five minutes. */
 	now?: () => number;
+	/** Called whenever the schedule table changed, so the precise timer is rearmed. */
+	onSchedulesChanged?: () => void;
 }
 
 /**
@@ -83,6 +85,9 @@ export function createChatExtension(options: ChatExtensionOptions): Extension {
 						at,
 						everyMs: args.everyMinutes != null ? args.everyMinutes * 60_000 : undefined,
 					});
+					// A reminder set mid-run must arm its own timer, or it waits for
+					// the fallback tick - up to half a minute late on a phone.
+					options.onSchedulesChanged?.();
 					return reply(`scheduled ${id} for ${stamp(at)}`);
 				},
 			}),
@@ -117,7 +122,9 @@ export function createChatExtension(options: ChatExtensionOptions): Extension {
 					if (!chat) return reply('this conversation has no chat', true);
 					const row = options.schedules.list(chat.conversation).find((entry) => entry.id === args.id);
 					if (!row) return reply('no such reminder in this chat');
-					return reply(options.schedules.remove(row.id) ? 'cancelled' : 'no such reminder');
+					const done = options.schedules.remove(row.id);
+					options.onSchedulesChanged?.();
+					return reply(done ? 'cancelled' : 'no such reminder');
 				},
 			}),
 		],

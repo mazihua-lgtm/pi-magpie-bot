@@ -120,6 +120,15 @@ export class Bot {
 	private readonly runTimeoutMs: number;
 	/** How long one channel may take to accept a message before it counts as failed. */
 	private readonly sendTimeoutMs: number;
+	/** Per-pass single-file flags, replacing the old per-interval closure. */
+	private readonly busy: Record<'work' | 'delivery', boolean> = { work: false, delivery: false };
+	/** The debounced wake, armed by `start()` once. */
+	private wakeTimer: NodeJS.Timeout | undefined;
+	private onWake: (() => void) | undefined;
+	/** How long arriving work waits before the passes run. */
+	private readonly wakeDebounceMs = 50;
+	/** The one-armed timer for the next due reminder, rearmed after each firing. */
+	private scheduleTimer: NodeJS.Timeout | undefined;
 
 	private constructor(
 		harness: Harness,
@@ -172,7 +181,6 @@ export class Bot {
 		const targets = new Targets(host);
 		const registry = createRegistry();
 		registry.install(createMemoryExtension(memory));
-		registry.install(createChatExtension({ outbox, schedules, targets, now }));
 
 		const workspaceDir = options.workspaceDir;
 		if (workspaceDir) {
@@ -200,6 +208,9 @@ export class Bot {
 			throw error;
 		}
 		const bot = new Bot(harness, host, modelId, options.systemPrompt ?? DEFAULT_SYSTEM_PROMPT, options.dataDir, now, lock, options);
+		// Installed after the Bot exists, so the tool can rearm the schedule timer
+		// through the very bot it belongs to.
+		registry.install(createChatExtension({ outbox, schedules, targets, now, onSchedulesChanged: () => bot.armScheduleTimer() }));
 		bot.recover();
 		return bot;
 	}
@@ -278,7 +289,9 @@ export class Bot {
 			conversation,
 			text: event.text,
 		};
-		return this.inbox.admit(accepted);
+		const acceptedNow = this.inbox.admit(accepted);
+		if (acceptedNow) this.wake();
+		return acceptedNow;
 	}
 
 	/**
@@ -311,13 +324,59 @@ export class Bot {
 			});
 			this.schedules.fired(row, this.now());
 		}
+		if (due.length > 0) this.armScheduleTimer();
 		return due.length;
 	}
 
 	/**
-	 * Work whatever is waiting, one conversation at a time. Several messages
-	 * that arrived while the agent was busy become one run, so it answers once.
+	 * One precise timer for the next due reminder, instead of polling for it.
+	 * Rearmed after anything changes the table, and bounded by the fallback tick
+	 * anyway: a timer that never fires cannot lose a reminder, only delay it to
+	 * the next tick.
 	 */
+	armScheduleTimer(): void {
+		if (this.scheduleTimer) clearTimeout(this.scheduleTimer);
+		const next = this.schedules.nextAt(this.now());
+		if (next === undefined) {
+			this.scheduleTimer = undefined;
+			return;
+		}
+		const delay = Math.max(50, Math.min(next - this.now(), 2_147_000_000));
+		this.scheduleTimer = setTimeout(() => {
+			this.scheduleTimer = undefined;
+			this.fireDueSchedules();
+			this.armScheduleTimer();
+			void this.wakeNow();
+		}, delay);
+		this.scheduleTimer.unref?.();
+	}
+
+	/** Runs both passes now, honouring the single-file rule. */
+	private async wakeNow(): Promise<void> {
+		const single = (label: 'work' | 'delivery', job: () => Promise<unknown>) => {
+			if (this.busy[label]) return;
+			this.busy[label] = true;
+			void job()
+				.catch((error) => console.error(`[bot] ${label} failed`, error))
+				.finally(() => {
+					this.busy[label] = false;
+				});
+		};
+		single('work', () => this.work());
+		single('delivery', () => this.dispatch());
+	}
+
+	/**
+	 * Work whatever is waiting, one conversation at a time.
+	 *
+	 * "One at a time" is per conversation, not per process: a chat whose run is
+	 * waiting on an approval card (up to five minutes) must not hold every other
+	 * chat's reminders and messages hostage. Each conversation's rows are claimed
+	 * here, but its run is awaited separately; `work` never finishes while one is
+	 * going, so the single-file promise - no run twice - is kept by the map.
+	 */
+	private readonly running = new Map<string, Promise<void>>();
+
 	async pump(): Promise<number> {
 		let handled = 0;
 		for (let guard = 0; guard < 100; guard++) {
@@ -330,20 +389,38 @@ export class Bot {
 			// answer the rest again on restart.
 			this.inbox.finishMany(batched.map((row) => row.id));
 			const text = [first.text, ...batched.map((row) => row.text)].join('\n');
-			try {
-				await this.answer(first.conversation, text);
-			} catch (error) {
-				// A run that threw must still close its rows: left `running` they would
-				// never be answered, never be retried, and never be mentioned until the
-				// next restart. Its approval cards go too - the poll inside cannot
-				// know the run is over.
-				console.error('[bot] run failed:', error);
-				this.approvals.expirePendingFor(first.conversation);
-				this.tell(first.conversation, text, '这条消息处理时出了错，我没能回上来。可以再说一次。', 'Something broke while I was answering that one. Could you send it again?');
-			}
-			for (const row of [first, ...batched]) this.inbox.finish(row.id);
-			handled += 1 + batched.length;
+			const rows = [first, ...batched];
+
+			const prior = this.running.get(first.conversation);
+			const run = (prior ?? Promise.resolve())
+				// Serialized behind anything already answering for this conversation.
+				.then(() => this.answer(first.conversation, text))
+				.catch((error) => {
+					// A run that threw must still close its rows: left `running` they would
+					// never be answered, never be retried, and never be mentioned until the
+					// next restart. Its approval cards go too - the poll inside cannot
+					// know the run is over.
+					console.error('[bot] run failed:', error);
+					this.approvals.expirePendingFor(first.conversation);
+					this.tell(first.conversation, text, '这条消息处理时出了错，我没能回上来。可以再说一次。', 'Something broke while I was answering that one. Could you send it again?');
+				})
+				.finally(() => {
+					for (const row of rows) this.inbox.finish(row.id);
+					this.running.delete(first.conversation);
+					// The conversation may have more to say (`send_message`, the outbox
+					// tail of this answer) or a later message may now be claimable.
+					this.wake();
+				});
+			this.running.set(first.conversation, run);
+			// Counted when claimed, not when answered: this pass returns so the
+			// next conversation's rows can go out while this one is thinking.
+			handled += rows.length;
+			// Keep the process honest in tests and on shutdown: the last wake in
+			// `finally` picks everything left up.
+			if (this.running.size >= 8) await Promise.race(this.running.values());
 		}
+		// Do not await the runs here: the caller (`work`) must return so delivery
+		// and further wakes keep flowing. `close` drains through `harness.close`.
 		return handled;
 	}
 
@@ -493,34 +570,83 @@ export class Bot {
 	}
 
 	/**
-	 * Run the loop in the background until the returned function is called.
+	 * Run in the background until the returned function is called.
 	 *
-	 * Working and delivering are two loops, not one. A run can be waiting on the
-	 * user (an approval card) or can have said something on its own (`send_message`)
-	 * while it is still running: both go through the outbox, and delivery that
-	 * waited for the run to end would show the card only after it had timed out.
+	 * Wakeups are driven by work arriving, not by a poll: an ingest, an enqueue
+	 * or a scheduled timer all call `wake()`, which runs the two passes on a
+	 * short debounce. One slow timer keeps the guarantees a poll used to give -
+	 * recovery after a crash, retries after failures, due reminders - without
+	 * waking the phone twice a second all night. Working and delivering are two
+	 * passes, not one: a run can be waiting on the user (an approval card) or can
+	 * have said something on its own (`send_message`) while it is still running,
+	 * and delivery that waited for the run to end would show the card only after
+	 * it had timed out.
+	 *
+	 * @param idleMs the fallback tick, for retries, crash recovery and anything
+	 *   that arrives without going through `wake()`.
 	 */
-	start(intervalMs = 2_000): () => void {
-		const every = (label: string, job: () => Promise<unknown>) => {
-			// One worker per loop. A run can take longer than the interval, and two
-			// at once would claim the same waiting messages and answer them twice —
-			// the one thing this design promises not to do.
-			let busy = false;
-			this.timers.push(
-				setInterval(() => {
-					if (busy) return;
-					busy = true;
-					void job()
-						.catch((error) => console.error(`[bot] ${label} failed`, error))
-						.finally(() => {
-							busy = false;
-						});
-				}, intervalMs),
-			);
+	start(idleMs = 30_000): () => void {
+		// A pass that starts while the same one is still running is not dropped:
+		// it is queued, or a message that arrived during a run would sit undelivered
+		// until the fallback tick. Single-file, but with a tail.
+		const pending: Array<'work' | 'delivery'> = [];
+		const run = (label: 'work' | 'delivery', job: () => Promise<unknown>) => {
+			if (this.busy[label]) {
+				if (!pending.includes(label)) pending.push(label);
+				return;
+			}
+			this.busy[label] = true;
+			job()
+				.catch((error) => console.error(`[bot] ${label} failed`, error))
+				.finally(() => {
+					this.busy[label] = false;
+					// This pass may have produced work for the other one - an answer
+					// into the outbox, an event into the inbox - just after that one
+					// had already been through. One more pass keeps neither finishing
+					// with leftovers; the debounce folds repeats.
+					if (this.inspect().pendingMessages + this.inspect().pendingEvents > 0) this.onWake?.();
+					const next = pending.shift();
+					if (next) this.onWake?.();
+				});
 		};
-		every('work', () => this.work());
-		every('delivery', () => this.dispatch());
+		const passes = {
+			work: () => run('work', () => this.work()),
+			delivery: () => run('delivery', () => this.dispatch()),
+		};
+
+		const wake = () => {
+			// Debounced: several messages landing together run one pass over all of
+			// them, which `pump` already batches per conversation.
+			if (this.wakeTimer) clearTimeout(this.wakeTimer);
+			this.wakeTimer = setTimeout(() => {
+				this.wakeTimer = undefined;
+				passes.work();
+				passes.delivery();
+			}, this.wakeDebounceMs);
+			this.wakeTimer.unref?.();
+		};
+		this.onWake = wake;
+
+		// The fallback tick: work that arrives without a wake (a retry coming due,
+		// a schedule whose timer was lost, an external write to the tables).
+		const tick = setInterval(() => {
+			passes.work();
+			passes.delivery();
+		}, idleMs);
+		tick.unref?.();
+		this.timers.push(tick);
+
+		// Arm the first reminder timer, and start with one pass so anything that
+		// survived the last process is picked up now, not in `idleMs`.
+		this.armScheduleTimer();
+		passes.work();
+		passes.delivery();
 		return () => void this.close();
+	}
+
+	/** Anything just arrived or enqueued calls this; the passes run on a debounce. */
+	wake(): void {
+		this.onWake?.();
 	}
 
 	/**

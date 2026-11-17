@@ -53,6 +53,14 @@ export class Schedules {
 			.all(now) as unknown as ScheduleRow[];
 	}
 
+	/** When the next timer fires, or undefined with none armed. For a precise wake-up timer. */
+	nextAt(now: number = Date.now()): number | undefined {
+		const row = this.host.db
+			.prepare(`SELECT MIN(next_run_at) AS at FROM schedules WHERE next_run_at > ?`)
+			.get(now) as { at: number | null };
+		return row.at ?? undefined;
+	}
+
 	/**
 	 * Move a fired schedule to its next occurrence, or drop a one-shot.
 	 * Call it only after the event it produces is durably in the inbox.

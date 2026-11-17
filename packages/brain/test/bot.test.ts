@@ -2,7 +2,7 @@ import { mkdtemp } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createModels } from '@earendil-works/pi-ai';
-import { openHostDb } from '@pi-magpie-bot/events';
+import { openHostDb, Schedules } from '@pi-magpie-bot/events';
 import { afterEach, describe, expect, it } from 'vitest';
 import { Bot, conversationIdFor } from '../src/index.ts';
 
@@ -243,5 +243,96 @@ describe('cancel_reminder ownership', () => {
 		// guard directly: list this chat's, find the foreign id, expect nothing.
 		const listed = bot['schedules'].list(mine);
 		expect(listed.find((row) => row.id === theirId)).toBeUndefined();
+	});
+});
+
+describe('event-driven wakeups', () => {
+	it('answers an ingested message promptly, without waiting for the fallback tick', async () => {
+		const dir = await dataDir();
+		const { bot, sent } = await openBot(dir);
+		// 30 minutes: nothing but the wake path could deliver in this window.
+		const stop = bot.start(30 * 60_000);
+		cleanups.push(async () => stop());
+
+		bot.ingest({ source: 'cli', sourceKey: 'wake-1', channel: 'cli', target: 'me', text: '你好' });
+		await new Promise((resolve) => setTimeout(resolve, 400));
+
+		expect(sent.length).toBeGreaterThan(0);
+		stop();
+	});
+
+	it('fires a reminder on a precise timer, not on the fallback tick', async () => {
+		const dir = await dataDir();
+		const { bot, sent } = await openBot(dir);
+		const stop = bot.start(60 * 60_000); // fallback: hourly, must not be needed
+		cleanups.push(async () => stop());
+
+		// Bind the target first: in real use a reminder always comes out of a
+		// conversation, so the chat it belongs to is already known.
+		bot.ingest({ source: 'cli', sourceKey: 'bind', channel: 'cli', target: 'me', text: '你好' });
+		await new Promise((resolve) => setTimeout(resolve, 300));
+
+		const host = openHostDb(join(dir, 'host.sqlite'));
+		const schedules = new Schedules(host);
+		schedules.add({
+			conversation: conversationIdFor('cli', 'me'),
+			channel: 'cli',
+			target: 'me',
+			text: '该关火了',
+			at: Date.now() + 300,
+		});
+		host.close();
+		bot.armScheduleTimer();
+
+		await new Promise((resolve) => setTimeout(resolve, 900));
+		expect(sent).toContain('⏰ 该关火了');
+		stop();
+	});
+
+	it('does not wake on a duplicate message', async () => {
+		const dir = await dataDir();
+		const { bot, sent } = await openBot(dir);
+		const stop = bot.start(60 * 60_000);
+		cleanups.push(async () => stop());
+
+		const event = { source: 'cli', sourceKey: 'dup-1', channel: 'cli', target: 'me', text: '你好' };
+		expect(bot.ingest(event)).toBe(true);
+		expect(bot.ingest(event)).toBe(false);
+		await new Promise((resolve) => setTimeout(resolve, 400));
+
+		// One answer, not two.
+		expect(sent.filter((text) => text.length > 0).length).toBe(1);
+		stop();
+	});
+});
+
+describe('a conversation that answers slowly', () => {
+	it('does not hold another conversation\'s answer hostage', async () => {
+		const dir = await dataDir();
+		const { bot, sent } = await openBot(dir);
+		const stop = bot.start(30 * 60_000);
+		cleanups.push(async () => stop());
+
+		// Per-conversation delay: 'me' takes 1.5s before its answer ships, 'other'
+		// ships at once. Under the old global queue the fast chat waited behind
+		// the slow one; delivered order is the proof.
+		const shippedAt = new Map<string, number>();
+		const original = bot['answer'].bind(bot);
+		bot['answer'] = async (conversationId: string, text: string) => {
+			const slow = conversationId === conversationIdFor('cli', 'me');
+			if (slow) await new Promise((resolve) => setTimeout(resolve, 1_500));
+			const result = await original(conversationId, text);
+			shippedAt.set(text, Date.now());
+			return result;
+		};
+
+		bot.ingest({ source: 'cli', sourceKey: 'slow-1', channel: 'cli', target: 'me', text: '慢的那条' });
+		bot.ingest({ source: 'cli', sourceKey: 'fast-1', channel: 'cli', target: 'other', text: '快的那条' });
+
+		await new Promise((resolve) => setTimeout(resolve, 2_000));
+		// Both shipped, and the fast one shipped while the slow one was thinking.
+		expect(shippedAt.size).toBe(2);
+		expect(shippedAt.get('快的那条')!).toBeLessThan(shippedAt.get('慢的那条')!);
+		stop();
 	});
 });

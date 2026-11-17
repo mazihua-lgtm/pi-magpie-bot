@@ -481,7 +481,11 @@ if (shutdown.length === 0) {
 	process.exit(1);
 }
 
-const stopLoop = bot.start(Number(env.TICK_MS ?? 2_000));
+// Work arrives through wake(); this number is only the fallback tick that
+// covers retries coming due and anything that bypasses wake. A tiny value here
+// would just spin the passes against empty tables.
+const idle = Number(env.TICK_MS ?? 30_000);
+const stopLoop = bot.start(Number.isFinite(idle) && idle >= 1_000 ? idle : 30_000);
 console.log(`[bot] model ${env.MAGPIE_MODEL ?? 'auto-picked'} via ${config.baseUrl}`);
 
 let closing = false;
