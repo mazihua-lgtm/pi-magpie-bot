@@ -225,7 +225,7 @@ export async function ensureOfmRoute(options: OfmRouteOptions): Promise<boolean>
 		// `execFile`'s message starts with the whole command line, which carries
 		// the service's own key. This log is visible in logcat and in the app's
 		// log panel, so the key is struck out the way install.ts does it.
-		const said = (error as Error).message.split('\n')[0].replaceAll(key, '***');
+		const said = ((error as Error).message.split('\n')[0] ?? '').replaceAll(key, '***');
 		log(`could not register the free provider: ${said}`);
 		return false;
 	}
