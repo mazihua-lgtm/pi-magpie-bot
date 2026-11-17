@@ -182,6 +182,14 @@ find "$sys/app/node_modules" \( -name '*.d.ts' -o -name '*.d.mts' -o -name '*.d.
 find "$sys/app/node_modules" -type d \( -name test -o -name tests -o -name docs -o -name .github \) -prune -exec rm -rf {} +
 find "$sys/app/node_modules" -name '*.md' -not -iname 'LICENSE*' -not -iname 'NOTICE*' -delete
 
+# Binaries for machines this app does not run on. pnpm resolves esbuild's
+# optional dependencies for the host doing the install, so a build made on an
+# Apple Mac carries two Mach-O binaries (~20 MB) that an arm64 Linux phone can
+# never execute. The Linux binary is still required by name, so nothing breaks.
+find "$sys/app/node_modules/.pnpm" -maxdepth 1 -type d \
+	\( -name '@esbuild+darwin-*' -o -name '@esbuild+win32-*' -o -name '@esbuild+linux-x64*' -o -name '@esbuild+linux-ia32*' \) \
+	-exec rm -rf {} +
+
 say "tarball"
 tar -C "$STAGE" -czf "$OUT" sys native
 ls -lh "$OUT"
