@@ -172,7 +172,7 @@ class AssistantService : Service() {
 
 	private fun listen(): Boolean {
 		val session = getSharedPreferences(PREFS, MODE_PRIVATE).getString(SESSION, null) ?: return false
-		val connection = URL("${Runner.BASE}/api/events").openConnection() as HttpURLConnection
+		val connection = URL("${Runner.BASE}/api/events?v=2").openConnection() as HttpURLConnection
 		return try {
 			connection.setRequestProperty("Cookie", "sid=$session")
 			connection.setRequestProperty("Accept", "text/event-stream")
@@ -180,14 +180,24 @@ class AssistantService : Service() {
 			connection.readTimeout = 0
 
 			connection.inputStream.bufferedReader().useLines { lines ->
+				var name = ""
 				for (line in lines) {
 					if (!keepRunning) return true
-					if (!line.startsWith("data: ")) continue
-					val message = JSONObject(line.removePrefix("data: "))
-					// The history replays with a role; a message that just happened has not.
-					if (message.has("role")) continue
-					val text = message.optString("text")
-					if (text.isNotEmpty() && !App.onScreen) alert(text)
+					when {
+						line.startsWith("event:") -> name = line.removePrefix("event:").trim()
+						line.startsWith("data:") -> {
+							// Only news: answers, reminders, and questions that wait on the user.
+							if (!App.onScreen) {
+								val event = JSONObject(line.removePrefix("data:").trim())
+								val chat = event.optString("chat")
+								when (name) {
+									"message" -> event.optString("text").takeIf { it.isNotEmpty() }?.let { alert(getString(R.string.app_name), it, chat) }
+									"approval" -> alert("需要你同意", event.optString("action"), chat)
+								}
+							}
+						}
+						line.isEmpty() -> name = ""
+					}
 				}
 			}
 			false
@@ -198,16 +208,22 @@ class AssistantService : Service() {
 		}
 	}
 
-	private fun alert(text: String) {
+	private fun alert(title: String, text: String, chat: String) {
 		val manager = getSystemService(NotificationManager::class.java)
 		val open = PendingIntent.getActivity(
-			this, 0, Intent(this, MainActivity::class.java), PendingIntent.FLAG_IMMUTABLE,
+			this,
+			chat.hashCode(),
+			Intent(this, MainActivity::class.java)
+				.putExtra(MainActivity.EXTRA_CHAT, chat)
+				.addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP),
+			PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
 		)
+		val plain = text.replace(Regex("[*_`#>]"), "").trim()
 		val notification = Notification.Builder(this, CHANNEL_ALERT)
-			.setSmallIcon(android.R.drawable.ic_dialog_info)
-			.setContentTitle(getString(R.string.app_name))
-			.setContentText(text)
-			.setStyle(Notification.BigTextStyle().bigText(text))
+			.setSmallIcon(R.drawable.ic_notify)
+			.setContentTitle(title)
+			.setContentText(plain)
+			.setStyle(Notification.BigTextStyle().bigText(plain))
 			.setAutoCancel(true)
 			.setContentIntent(open)
 			.build()
@@ -219,7 +235,7 @@ class AssistantService : Service() {
 			this, 0, Intent(this, MainActivity::class.java), PendingIntent.FLAG_IMMUTABLE,
 		)
 		val notification = Notification.Builder(this, CHANNEL_RUN)
-			.setSmallIcon(android.R.drawable.stat_notify_chat)
+			.setSmallIcon(R.drawable.ic_notify)
 			.setContentTitle(getString(R.string.app_name))
 			.setContentText(text)
 			.setOngoing(true)
@@ -288,8 +304,8 @@ class AssistantService : Service() {
 		private const val CHANNEL_ALERT = "reminders"
 		private const val RUNNING_ID = 1
 		private var ALERT_ID = 100
-		private const val PREFS = "bot"
-		const val SESSION = "sid"
+		private const val PREFS = app.pimagpie.bot.data.Api.PREFS
+		private const val SESSION = app.pimagpie.bot.data.Api.SESSION
 
 		fun start(context: Context) {
 			context.startForegroundService(Intent(context, AssistantService::class.java))

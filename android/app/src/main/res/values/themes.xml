@@ -1,9 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-	<!-- The chat page colours itself; the window only has to not flash white. -->
-	<style name="AppTheme" parent="@android:style/Theme.DeviceDefault.Light.NoActionBar">
-		<item name="android:windowBackground">@color/brand</item>
-		<item name="android:statusBarColor">@color/brand</item>
-		<item name="android:navigationBarColor">@color/brand</item>
+	<!-- Compose draws everything; the window only has to open on the same black. -->
+	<style name="AppTheme" parent="@android:style/Theme.DeviceDefault.NoActionBar">
+		<item name="android:windowBackground">@color/ground</item>
+		<item name="android:statusBarColor">@android:color/transparent</item>
+		<item name="android:navigationBarColor">@android:color/transparent</item>
 	</style>
 </resources>

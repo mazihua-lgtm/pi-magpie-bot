@@ -76,7 +76,41 @@ CREATE TABLE IF NOT EXISTS approvals (
 	decided_at   INTEGER
 );
 CREATE INDEX IF NOT EXISTS approvals_pending ON approvals (conversation, status);
+
+CREATE TABLE IF NOT EXISTS chats (
+	conversation TEXT PRIMARY KEY,
+	channel      TEXT NOT NULL,
+	owner        TEXT NOT NULL,
+	chat         TEXT NOT NULL,
+	title        TEXT NOT NULL,
+	title_state  TEXT NOT NULL DEFAULT 'user',
+	pinned       INTEGER NOT NULL DEFAULT 0,
+	model        TEXT,
+	thinking     INTEGER NOT NULL DEFAULT 0,
+	created_at   INTEGER NOT NULL,
+	updated_at   INTEGER NOT NULL,
+	UNIQUE (channel, owner, chat)
+);
 `;
+
+/**
+ * Columns added after the first release. `CREATE TABLE IF NOT EXISTS` leaves an
+ * existing table as it was, so a database from an older version gets them here.
+ */
+const COLUMNS: Array<{ table: string; column: string; type: string }> = [
+	// Pictures that came with a message, as JSON; cleared once it is answered.
+	{ table: 'inbox', column: 'attachments', type: 'TEXT' },
+	// What a message is (an answer, an approval card, a reminder), for a surface
+	// that shows some of them its own way.
+	{ table: 'outbox', column: 'kind', type: 'TEXT' },
+];
+
+function migrate(db: DatabaseSync): void {
+	for (const { table, column, type } of COLUMNS) {
+		const present = (db.prepare(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>).some((row) => row.name === column);
+		if (!present) db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${type}`);
+	}
+}
 
 export function openHostDb(path: string): HostDb {
 	if (path !== ':memory:') mkdirSync(dirname(path), { recursive: true });
@@ -89,5 +123,6 @@ export function openHostDb(path: string): HostDb {
 	db.exec('PRAGMA synchronous = NORMAL');
 	db.exec('PRAGMA busy_timeout = 5000');
 	db.exec(SCHEMA);
+	migrate(db);
 	return { db, close: () => db.close() };
 }

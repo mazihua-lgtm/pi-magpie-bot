@@ -1,14 +1,16 @@
 import { createHash } from 'node:crypto';
 import { join } from 'node:path';
 import { BACKGROUND_CONTEXT } from '@earendil-works/chord/context';
-import type { Message, Models } from '@earendil-works/pi-ai';
+import type { ImageContent, Message, Models, TextContent } from '@earendil-works/pi-ai';
 import { CodingTools } from '@earendil-works/pi-durable/tools';
 import { NodeExecutionEnv } from '@earendil-works/pi-durable/env/node';
 import { Harness, createRegistry } from '@earendil-works/pi-durable';
-import type { ConversationId } from '@earendil-works/pi-durable';
+import type { AgentChange, ContextView, Conversation, ConversationId, UserInput } from '@earendil-works/pi-durable';
 import { openNodeSqliteStorage } from '@earendil-works/pi-durable/storage/sqlite/node';
 import {
 	Approvals,
+	attachmentsOf,
+	Chats,
 	claimDataDir,
 	Inbox,
 	Outbox,
@@ -17,21 +19,75 @@ import {
 	Settings,
 	Targets,
 	openHostDb,
+	type Attachment,
 	type DataDirLock,
 	type HostDb,
 	type IncomingEvent,
+	type OutgoingKind,
 } from '@pi-magpie-bot/events';
 import { type GatewayConfig, gatewayConfig, openModels } from '@pi-magpie-bot/gateway';
 import { MemoryStore } from '@pi-magpie-bot/memory';
 import { createApprovalExtension } from './approval-extension.ts';
 import { createChatExtension } from './chat-extension.ts';
 import { createMemoryExtension } from './memory-extension.ts';
+import { isNoReply, livePartial, type LivePartial } from './messages.ts';
 import { DEFAULT_SYSTEM_PROMPT } from './prompt.ts';
+import { createWebExtension } from './web-extension.ts';
+
+/** What kind of message a send is, for a channel that shows some kinds its own way. */
+export interface SendMeta {
+	kind?: OutgoingKind;
+}
 
 /** One chat platform, reduced to the two things a bot needs from it. */
 export interface Channel {
 	readonly id: string;
-	send(target: string, text: string): Promise<void>;
+	send(target: string, text: string, meta?: SendMeta): Promise<void>;
+}
+
+/**
+ * What happens inside the bot that a live surface may want to show as it
+ * happens. `conversation` is the host conversation id (`conversationIdFor`).
+ */
+export type BotEvent =
+	| { type: 'status'; conversation: string; busy: boolean }
+	| { type: 'partial'; conversation: string; partial: LivePartial }
+	| { type: 'approval'; conversation: string; id: string; action: string; expiresAt: number }
+	| { type: 'approval_done'; conversation: string; id: string; status: 'allowed' | 'denied' | 'expired' }
+	/** A run ended with an answer; `input` is what it answered. */
+	| { type: 'answered'; conversation: string; input: string; text: string };
+
+/** One model as a chooser shows it. */
+export interface ModelChoice {
+	id: string;
+	name: string;
+	reasoning: boolean;
+	vision: boolean;
+}
+
+/** The settings key the default model is kept under. */
+const DEFAULT_MODEL_KEY = 'default-model';
+/** How often at most a partial answer goes out: about ten times a second. */
+const PARTIAL_EVERY_MS = 100;
+
+/** Listeners of one kind of thing, each kept from breaking the others. */
+class Listeners<T> {
+	private readonly set = new Set<(value: T) => void>();
+
+	add(listener: (value: T) => void): () => void {
+		this.set.add(listener);
+		return () => this.set.delete(listener);
+	}
+
+	emit(value: T): void {
+		for (const listener of this.set) {
+			try {
+				listener(value);
+			} catch (error) {
+				console.error('[bot] an event listener threw', error);
+			}
+		}
+	}
 }
 
 export interface BotOptions {
@@ -66,6 +122,8 @@ export interface MessageEvent {
 	/** Where to reply: a chat id, a session id. */
 	target: string;
 	text: string;
+	/** Pictures sent with it. */
+	images?: Attachment[];
 }
 
 const CJK = /[\u4e00-\u9fff]/;
@@ -110,7 +168,19 @@ export class Bot {
 	private readonly channels = new Map<string, Channel>();
 	private readonly now: () => number;
 	private readonly harness: Harness;
-	private readonly modelId: string;
+	/** The model a conversation uses unless its chat picked another; changeable, and kept in settings. */
+	private modelId: string;
+	private readonly models: Models;
+	private readonly chats: Chats;
+	private readonly events: Listeners<BotEvent>;
+	/** The partial answer of each conversation answering right now. */
+	private readonly partials = new Map<string, LivePartial>();
+	/** The durable conversation of each run in progress, for `stop`. */
+	private readonly active = new Map<string, Conversation>();
+	/** Conversations the user stopped: their run ends without the "no answer" notice. */
+	private readonly stopped = new Set<string>();
+	/** Owners whose memory was already moved to the shared scope this process. */
+	private readonly scoped = new Set<string>();
 	private readonly systemPrompt: string;
 	private timers: NodeJS.Timeout[] = [];
 	private closed = false;
@@ -139,9 +209,14 @@ export class Bot {
 		now: () => number,
 		lock: DataDirLock,
 		options: BotOptions,
+		models: Models,
+		events: Listeners<BotEvent>,
+		memory: MemoryStore,
 	) {
 		this.harness = harness;
 		this.modelId = modelId;
+		this.models = models;
+		this.events = events;
 		this.systemPrompt = systemPrompt;
 		this.lock = lock;
 		this.runTimeoutMs = options.runTimeoutMs ?? 5 * 60_000;
@@ -153,7 +228,10 @@ export class Bot {
 		this.targets = new Targets(host);
 		this.approvals = new Approvals(host);
 		this.settings = new Settings(host);
-		this.memory = new MemoryStore(join(dataDir, 'memory'));
+		this.chats = new Chats(host);
+		// The same store the memory tools write through: its write queue is per
+		// instance, and the app's notes screen writes too.
+		this.memory = memory;
 		this.now = now;
 	}
 
@@ -175,18 +253,36 @@ export class Bot {
 		const host = openHostDb(join(options.dataDir, 'host.sqlite'));
 		const storage = await openNodeSqliteStorage(join(options.dataDir, 'agent.sqlite'));
 
+		// A model picked in an app outlives the process; one the gateway no longer
+		// has falls back to the usual choice rather than failing every run.
+		const stored = new Settings(host).get(DEFAULT_MODEL_KEY);
+		const startModel = stored && models.getModel('magpie', stored) ? stored : modelId;
+
+		const events = new Listeners<BotEvent>();
 		const memory = new MemoryStore(join(options.dataDir, 'memory'));
 		const outbox = new Outbox(host);
 		const schedules = new Schedules(host);
 		const targets = new Targets(host);
 		const registry = createRegistry();
-		registry.install(createMemoryExtension(memory));
+		registry.install(createWebExtension());
+		// Something enqueued mid-run (a card, a `send_message`) must go out now,
+		// not at the fallback tick: the run that wrote it is not a pass that ends.
+		let wake = () => {};
 
 		const workspaceDir = options.workspaceDir;
 		if (workspaceDir) {
 			registry.install(CodingTools);
 			registry.install(
-				createApprovalExtension('approval', { approvals: new Approvals(host), outbox, targets }),
+				createApprovalExtension('approval', {
+					approvals: new Approvals(host),
+					outbox,
+					targets,
+					onAsked: (card) => {
+						events.emit({ type: 'approval', ...card });
+						wake();
+					},
+					onSettled: (card) => events.emit({ type: 'approval_done', ...card }),
+				}),
 			);
 		}
 
@@ -207,10 +303,21 @@ export class Bot {
 			lock.release();
 			throw error;
 		}
-		const bot = new Bot(harness, host, modelId, options.systemPrompt ?? DEFAULT_SYSTEM_PROMPT, options.dataDir, now, lock, options);
+		const bot = new Bot(harness, host, startModel, options.systemPrompt ?? DEFAULT_SYSTEM_PROMPT, options.dataDir, now, lock, options, models, events, memory);
 		// Installed after the Bot exists, so the tool can rearm the schedule timer
 		// through the very bot it belongs to.
-		registry.install(createChatExtension({ outbox, schedules, targets, now, onSchedulesChanged: () => bot.armScheduleTimer() }));
+		wake = () => bot.wake();
+		registry.install(
+			createChatExtension({ outbox, schedules, targets, now, onSchedulesChanged: () => bot.armScheduleTimer(), onEnqueued: () => bot.wake() }),
+		);
+		// Memory belongs to the person, not to one chat: every chat of a phone
+		// reads and writes the same notes. The scope is resolved per run.
+		registry.install(
+			createMemoryExtension(memory, (agentConversation) => {
+				const chat = targets.getByAgent(agentConversation);
+				return chat ? bot.memoryScope(chat.channel, chat.target) : agentConversation;
+			}),
+		);
 		bot.recover();
 		return bot;
 	}
@@ -267,7 +374,8 @@ export class Bot {
 		const conversation = conversationIdFor(event.channel, event.target);
 		this.targets.bind({ conversation, channel: event.channel, target: event.target });
 
-		const answer = this.approvals.answer(conversation, event.text);
+		// A picture is never a yes or a no.
+		const answer = event.images && event.images.length > 0 ? undefined : this.approvals.answer(conversation, event.text);
 		if (answer) {
 			this.approvals.decide(answer.row.id, answer.allowed ? 'allowed' : 'denied');
 			this.outbox.enqueue({
@@ -288,9 +396,19 @@ export class Bot {
 			sourceKey: event.sourceKey,
 			conversation,
 			text: event.text,
+			...(event.images && event.images.length > 0 ? { attachments: event.images } : {}),
 		};
-		const acceptedNow = this.inbox.admit(accepted);
-		if (acceptedNow) this.wake();
+		return this.admit(accepted);
+	}
+
+	/** Into the inbox, and say the conversation is busy now. */
+	private admit(event: IncomingEvent): boolean {
+		const acceptedNow = this.inbox.admit(event);
+		if (acceptedNow) {
+			this.chats.touch(event.conversation, this.now());
+			this.events.emit({ type: 'status', conversation: event.conversation, busy: true });
+			this.wake();
+		}
 		return acceptedNow;
 	}
 
@@ -314,9 +432,10 @@ export class Bot {
 					channel: target.channel,
 					target: target.target,
 					text: `⏰ ${row.text}`,
+					kind: 'reminder',
 				});
 			}
-			this.inbox.admit({
+			this.admit({
 				source: 'schedule',
 				sourceKey: row.id + row.next_run_at,
 				conversation: row.conversation,
@@ -336,6 +455,7 @@ export class Bot {
 	 */
 	armScheduleTimer(): void {
 		if (this.scheduleTimer) clearTimeout(this.scheduleTimer);
+		if (this.closed) return;
 		const next = this.schedules.nextAt(this.now());
 		if (next === undefined) {
 			this.scheduleTimer = undefined;
@@ -390,12 +510,16 @@ export class Bot {
 			this.inbox.finishMany(batched.map((row) => row.id));
 			const text = [first.text, ...batched.map((row) => row.text)].join('\n');
 			const rows = [first, ...batched];
+			const images = rows.flatMap((row) => attachmentsOf(row));
 
 			const prior = this.running.get(first.conversation);
 			const run = (prior ?? Promise.resolve())
 				// Serialized behind anything already answering for this conversation.
-				.then(() => this.answer(first.conversation, text))
+				.then(() => this.answer(first.conversation, text, images))
 				.catch((error) => {
+					// Cut off by `close()`: the database is gone, and the rows left
+					// `running` are what the next start recovers, as after a crash.
+					if (this.closed) return;
 					// A run that threw must still close its rows: left `running` they would
 					// never be answered, never be retried, and never be mentioned until the
 					// next restart. Its approval cards go too - the poll inside cannot
@@ -405,8 +529,18 @@ export class Bot {
 					this.tell(first.conversation, text, '这条消息处理时出了错，我没能回上来。可以再说一次。', 'Something broke while I was answering that one. Could you send it again?');
 				})
 				.finally(() => {
+					// Only the last run of the chain clears it: an earlier one ending
+					// must not make a later one look finished.
+					if (this.running.get(first.conversation) === run) {
+						this.running.delete(first.conversation);
+						// A stop that came too late to matter must not stop the next message.
+						this.stopped.delete(first.conversation);
+					}
+					if (this.closed) return;
 					for (const row of rows) this.inbox.finish(row.id);
-					this.running.delete(first.conversation);
+					if (!this.isBusy(first.conversation)) {
+						this.events.emit({ type: 'status', conversation: first.conversation, busy: false });
+					}
 					// The conversation may have more to say (`send_message`, the outbox
 					// tail of this answer) or a later message may now be claimable.
 					this.wake();
@@ -428,33 +562,62 @@ export class Bot {
 	private tell(conversationId: string, sample: string, zh: string, en: string): void {
 		const target = this.targets.get(conversationId);
 		if (!target) return;
-		this.outbox.enqueue({ conversation: conversationId, channel: target.channel, target: target.target, text: bilingual(sample, zh, en) });
+		this.outbox.enqueue({ conversation: conversationId, channel: target.channel, target: target.target, text: bilingual(sample, zh, en), kind: 'notice' });
 	}
 
 	/** One run: the durable conversation does the work, the outbox carries it out. */
-	private async answer(conversationId: string, text: string): Promise<void> {
+	private async answer(conversationId: string, text: string, images: readonly Attachment[] = []): Promise<void> {
 		const conversation = await this.ensureConversation(conversationId);
-		const submission = await conversation.submit({ type: 'input', content: text }, BACKGROUND_CONTEXT);
-		// A run that never settles would hold the one work loop forever: the busy
-		// flag in `start()` would skip every later tick, so no message and no
-		// reminder would ever be handled again - silently, with no error anywhere.
-		const settled = await Promise.race([
-			submission.wait(BACKGROUND_CONTEXT),
-			new Promise<never>((_, reject) =>
-				setTimeout(() => reject(new Error(`run took longer than ${this.runTimeoutMs / 60_000} minutes`)), this.runTimeoutMs).unref?.(),
-			),
-		]).catch(async (error) => {
-			console.error(`[bot] giving up on a run: ${(error as Error).message}`);
-			await submission.abort(BACKGROUND_CONTEXT).catch(() => {});
-			// The run is gone but any approval card it asked is still pending, and
-			// the poll inside does not know. Left open, a "好" typed long after
-			// would approve a call that will never run; close them with the run.
-			this.approvals.expirePendingFor(conversationId);
-			return { status: 'unanswered' as const, reason: 'timed_out' };
-		});
+		await this.prepare(conversationId, conversation);
+		// Stopped while it was being claimed, before there was a run to abort.
+		if (this.stopped.delete(conversationId)) return;
+		const content: UserInput =
+			images.length > 0
+				? [
+						...(text ? [{ type: 'text', text } satisfies TextContent] : []),
+						...images.map((image): ImageContent => ({ type: 'image', data: image.data, mimeType: image.mimeType })),
+					]
+				: text;
+
+		// Watched from before the input goes in, so the partial answer counts only
+		// what this run adds after the entries already there.
+		const live = await this.watchRun(conversationId, conversation);
+		this.active.set(conversationId, conversation);
+		let settled: { status: string; reason?: unknown };
+		try {
+			const submission = await conversation.submit({ type: 'input', content }, BACKGROUND_CONTEXT);
+			// A run that never settles would hold the one work loop forever: the busy
+			// flag in `start()` would skip every later tick, so no message and no
+			// reminder would ever be handled again - silently, with no error anywhere.
+			let timer: NodeJS.Timeout | undefined;
+			settled = await Promise.race([
+				submission.wait(BACKGROUND_CONTEXT),
+				new Promise<never>((_, reject) => {
+					timer = setTimeout(() => reject(new Error(`run took longer than ${this.runTimeoutMs / 60_000} minutes`)), this.runTimeoutMs);
+					timer.unref?.();
+				}),
+			])
+				.catch(async (error) => {
+					console.error(`[bot] giving up on a run: ${(error as Error).message}`);
+					await submission.abort(BACKGROUND_CONTEXT).catch(() => {});
+					// The run is gone but any approval card it asked is still pending, and
+					// the poll inside does not know. Left open, a "好" typed long after
+					// would approve a call that will never run; close them with the run.
+					this.approvals.expirePendingFor(conversationId);
+					return { status: 'unanswered' as const, reason: 'timed_out' };
+				})
+				.finally(() => clearTimeout(timer));
+		} finally {
+			this.active.delete(conversationId);
+			await live.stop();
+		}
 
 		const target = this.targets.get(conversationId);
 		if (!target) return;
+
+		// Stopped on purpose: the user knows there is no answer, and saying
+		// "that one did not come back" would read as a failure.
+		if (this.stopped.delete(conversationId) && settled.status !== 'done') return;
 
 		if (settled.status !== 'done') {
 			const reason = 'reason' in settled ? String(settled.reason) : 'failed';
@@ -477,14 +640,89 @@ export class Bot {
 					`这次没能回答。可以再说一次，或者稍后让我重试。${why}`,
 					`That one did not come back. Send it again, or ask me to retry later.${why}`,
 				),
+				kind: 'notice',
 			});
 			return;
 		}
 
 		const answer = await this.lastAssistantText(conversationId);
-		if (answer.trim()) {
-			this.outbox.enqueue({ conversation: conversationId, channel: target.channel, target: target.target, text: answer });
+		if (answer.trim() && !isNoReply(answer)) {
+			this.outbox.enqueue({ conversation: conversationId, channel: target.channel, target: target.target, text: answer, kind: 'answer' });
+			this.chats.touch(conversationId, this.now());
+			this.events.emit({ type: 'answered', conversation: conversationId, input: text, text: answer });
 		}
+	}
+
+	/**
+	 * Before a run: the conversation uses the model and thinking its chat asked
+	 * for (or the default), and the system prompt of this version. Configured
+	 * only when something differs, so an unchanged chat costs one read.
+	 */
+	private async prepare(conversationId: string, conversation: Conversation): Promise<void> {
+		const chat = this.chats.byConversation(conversationId);
+		const modelId = chat?.model && this.models.getModel('magpie', chat.model) ? chat.model : this.modelId;
+		const reasoning = this.models.getModel('magpie', modelId)?.reasoning ?? false;
+		// Only a chat with its own settings says anything about thinking; any other
+		// conversation keeps whatever it had.
+		const thinking = chat ? (chat.thinking && reasoning ? ('medium' as const) : ('off' as const)) : undefined;
+		const agent = await conversation.agent(BACKGROUND_CONTEXT);
+		const change: AgentChange = {
+			...(agent.model?.provider !== 'magpie' || agent.model.modelId !== modelId ? { model: { provider: 'magpie', modelId } } : {}),
+			...(thinking && agent.thinkingLevel !== thinking ? { thinkingLevel: thinking } : {}),
+			...(agent.instructions !== this.systemPrompt ? { instructions: this.systemPrompt } : {}),
+		};
+		if (Object.keys(change).length > 0) await conversation.configure(change, BACKGROUND_CONTEXT);
+	}
+
+	/**
+	 * Follow a run as it writes: every change to the conversation's live state
+	 * becomes a partial answer, sent at most every `PARTIAL_EVERY_MS` with the
+	 * newest one always last. Stopping drops the partial.
+	 */
+	private async watchRun(conversationId: string, conversation: Conversation): Promise<{ stop(): Promise<void> }> {
+		let watch: Awaited<ReturnType<Conversation['watch']>>;
+		try {
+			watch = await conversation.watch(BACKGROUND_CONTEXT, { min: 100, max: 400 });
+		} catch (error) {
+			// A live view is a nicety: the answer still arrives without it.
+			console.error('[bot] could not watch a run', error);
+			return { stop: async () => {} };
+		}
+		const entries = watch.value.entries;
+		const after = entries.length > 0 ? Number(entries[entries.length - 1]?.id) : 0;
+		let lastSent = 0;
+		let timer: NodeJS.Timeout | undefined;
+		let latest = '';
+		const send = () => {
+			timer = undefined;
+			const partial = this.partials.get(conversationId);
+			if (!partial) return;
+			lastSent = Date.now();
+			this.events.emit({ type: 'partial', conversation: conversationId, partial });
+		};
+		watch.start(async (call) => {
+			if (call.kind !== 'value') return;
+			try {
+				const partial = livePartial(call.value, after);
+				if (!partial.text && !partial.thinking && partial.tools.length === 0) return;
+				const key = JSON.stringify(partial);
+				if (key === latest) return;
+				latest = key;
+				this.partials.set(conversationId, partial);
+				const wait = PARTIAL_EVERY_MS - (Date.now() - lastSent);
+				if (wait <= 0) send();
+				else timer ??= setTimeout(send, wait);
+			} catch (error) {
+				console.error('[bot] could not read a partial answer', error);
+			}
+		});
+		return {
+			stop: async () => {
+				clearTimeout(timer);
+				this.partials.delete(conversationId);
+				await watch.stop();
+			},
+		};
 	}
 
 	private async lastAssistantText(conversationId: string): Promise<string> {
@@ -508,6 +746,123 @@ export class Bot {
 			.slice(-limit);
 	}
 
+	/**
+	 * The raw context of a conversation, for a surface that draws its own
+	 * bubbles (see `appMessages`); undefined when nothing was said in it yet.
+	 * Unlike `transcript` it never creates a conversation.
+	 */
+	async context(conversationId: string): Promise<ContextView | undefined> {
+		const bound = this.targets.get(conversationId);
+		if (!bound?.agentConversation) return undefined;
+		const conversation = await this.harness.conversation(Number(bound.agentConversation) as ConversationId, BACKGROUND_CONTEXT);
+		return conversation ? await conversation.context(BACKGROUND_CONTEXT) : undefined;
+	}
+
+	/** Answering now, or with a message waiting to be answered. */
+	isBusy(conversationId: string): boolean {
+		return this.running.has(conversationId) || this.inbox.pendingFor(conversationId).length > 0;
+	}
+
+	/** The answer being written in this conversation, while one is. */
+	partialFor(conversationId: string): LivePartial | undefined {
+		return this.partials.get(conversationId);
+	}
+
+	/**
+	 * Stop answering in this conversation: the run in progress is aborted and
+	 * messages still waiting for it are dropped. No "no answer" notice follows.
+	 * False when there was nothing to stop.
+	 */
+	async stop(conversationId: string): Promise<boolean> {
+		const waiting = this.inbox.pendingFor(conversationId);
+		for (const row of waiting) this.inbox.finish(row.id);
+		const conversation = this.active.get(conversationId);
+		this.approvals.expirePendingFor(conversationId);
+		if (conversation) {
+			this.stopped.add(conversationId);
+			await conversation.abort(BACKGROUND_CONTEXT);
+			return true;
+		}
+		if (this.running.has(conversationId)) {
+			// Claimed but not started yet: `answer` sees this and does not begin.
+			this.stopped.add(conversationId);
+			return true;
+		}
+		if (waiting.length > 0) this.events.emit({ type: 'status', conversation: conversationId, busy: false });
+		return waiting.length > 0;
+	}
+
+	/** Listen to what happens inside, as it happens; returns the way to stop listening. */
+	on(listener: (event: BotEvent) => void): () => void {
+		return this.events.add(listener);
+	}
+
+	/** Every model the gateway offers, as a chooser shows them. */
+	modelChoices(): ModelChoice[] {
+		return this.models.getModels('magpie').map((model) => ({
+			id: model.id,
+			name: model.name || model.id,
+			reasoning: Boolean(model.reasoning),
+			vision: model.input.includes('image'),
+		}));
+	}
+
+	/** The model conversations use unless their chat picked another. */
+	get defaultModel(): string {
+		return this.modelId;
+	}
+
+	/** Change the default and keep it: every conversation without a model of its own follows it from its next run. */
+	setDefaultModel(modelId: string): void {
+		if (!this.models.getModel('magpie', modelId)) throw new Error(`the gateway has no model "${modelId}"`);
+		this.modelId = modelId;
+		this.settings.set(DEFAULT_MODEL_KEY, modelId);
+	}
+
+	/**
+	 * One answer to one prompt, outside any conversation: for small jobs such as
+	 * naming a chat. Empty when the model failed; never throws.
+	 */
+	async complete(system: string, prompt: string, timeoutMs = 30_000): Promise<string> {
+		const model = this.models.getModel('magpie', this.modelId);
+		if (!model) return '';
+		try {
+			const message = await this.models.completeSimple(
+				model,
+				{ systemPrompt: system, messages: [{ role: 'user', content: prompt, timestamp: this.now() }] },
+				{ signal: AbortSignal.timeout(timeoutMs) },
+			);
+			return message.stopReason === 'error' ? '' : textOf(message);
+		} catch {
+			return '';
+		}
+	}
+
+	/**
+	 * Whose memory a chat reads and writes: the person, not the chat. On the web
+	 * channel a target is `<session>/<chat>`, and the session is the person; on
+	 * other channels the target is the chat and the person at once. The notes an
+	 * older version kept for the person's first conversation move along once.
+	 */
+	async memoryScope(channel: string, target: string): Promise<string> {
+		const owner = channel === 'web' ? (target.split('/')[0] ?? target) : target;
+		const scope = `${channel}-${owner}`;
+		if (!this.scoped.has(scope)) {
+			const legacy = this.targets.get(conversationIdFor(channel, owner))?.agentConversation;
+			if (legacy) await this.memory.adopt(legacy, scope).catch((error) => console.error('[bot] could not move old notes', error));
+			this.scoped.add(scope);
+		}
+		return scope;
+	}
+
+	/**
+	 * The host tables, for a surface in front of this bot (the app API) that
+	 * lists and changes what the bot keeps. Not for the loop's own state.
+	 */
+	get tables(): { chats: Chats; schedules: Schedules; targets: Targets; approvals: Approvals; memory: MemoryStore } {
+		return { chats: this.chats, schedules: this.schedules, targets: this.targets, approvals: this.approvals, memory: this.memory };
+	}
+
 	private async ensureConversation(conversationId: string) {
 		const bound = this.targets.get(conversationId);
 		if (bound?.agentConversation) {
@@ -518,7 +873,7 @@ export class Bot {
 		const created = await this.harness.createConversation(
 			{
 				ownership: { kind: 'ownerless' },
-				agent: { model: { provider: 'magpie', modelId: this.modelId } },
+				agent: { model: { provider: 'magpie', modelId: this.modelId }, instructions: this.systemPrompt },
 			},
 			BACKGROUND_CONTEXT,
 		);
@@ -541,7 +896,7 @@ export class Bot {
 				// `sending` until a restart, where it is marked unknown and never
 				// retried. Give it a bound and let the retry handle the rest.
 				await Promise.race([
-					channel.send(row.target, row.text),
+					channel.send(row.target, row.text, row.kind ? { kind: row.kind } : undefined),
 					new Promise<never>((_, reject) =>
 						setTimeout(() => reject(new Error(`send to ${row.channel} timed out`)), this.sendTimeoutMs).unref?.(),
 					),
@@ -600,6 +955,8 @@ export class Bot {
 				.catch((error) => console.error(`[bot] ${label} failed`, error))
 				.finally(() => {
 					this.busy[label] = false;
+					// A pass that outlived `close()` must not touch the closed database.
+					if (this.closed) return;
 					// This pass may have produced work for the other one - an answer
 					// into the outbox, an event into the inbox - just after that one
 					// had already been through. One more pass keeps neither finishing
@@ -666,10 +1023,20 @@ export class Bot {
 		};
 	}
 
-	async close(): Promise<void> {
-		if (this.closed) return;
+	/** Settles when the first `close()` is done: a second caller waits for it instead of returning early. */
+	private closing: Promise<void> | undefined;
+
+	close(): Promise<void> {
+		this.closing ??= this.shutdown();
+		return this.closing;
+	}
+
+	private async shutdown(): Promise<void> {
 		this.closed = true;
 		for (const timer of this.timers.splice(0)) clearInterval(timer);
+		clearTimeout(this.wakeTimer);
+		clearTimeout(this.scheduleTimer);
+		this.onWake = undefined;
 		try {
 			await this.harness.close(BACKGROUND_CONTEXT);
 		} finally {

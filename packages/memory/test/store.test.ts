@@ -88,3 +88,29 @@ describe('parallel writes', () => {
 		expect(await memory.readNote('c1', 'ok')).toBe('fine');
 	});
 });
+
+describe('forgetting and moving notes', () => {
+	it('deletes a note with its index line, and says when there was none', async () => {
+		const memory = await store();
+		await memory.writeNote('c1', 'car', '蓝色比亚迪');
+		await memory.writeNote('c1', 'cat', '豆包');
+		expect(await memory.deleteNote('c1', 'car')).toBe(true);
+		expect(await memory.listNotes('c1')).toEqual(['cat']);
+		expect(await memory.readIndex('c1')).toBe('- cat: 豆包\n');
+		expect(await memory.deleteNote('c1', 'car')).toBe(false);
+		expect(await memory.deleteNote('c1', 'cat')).toBe(true);
+		expect(await memory.readIndex('c1')).toBe('');
+	});
+
+	it('starts a new scope as a copy of an old one, once, and never over one that exists', async () => {
+		const memory = await store();
+		await memory.writeNote(7, 'name', '老张');
+		expect(await memory.adopt(7, 'web-owner')).toBe(true);
+		expect(await memory.readNote('web-owner', 'name')).toBe('老张');
+
+		await memory.writeNote(7, 'later', 'x');
+		expect(await memory.adopt(7, 'web-owner')).toBe(false);
+		expect(await memory.listNotes('web-owner')).toEqual(['name']);
+		expect(await memory.adopt(8, 'nobody')).toBe(false);
+	});
+});

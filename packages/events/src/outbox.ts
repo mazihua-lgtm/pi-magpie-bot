@@ -6,7 +6,15 @@ export interface OutgoingMessage {
 	/** Where the channel should send it: a chat id, a session id. */
 	target: string;
 	text: string;
+	/**
+	 * What it is, for a surface that shows some kinds its own way: `answer` (the
+	 * run's final words), `approval` (a yes/no card), `reminder`, `notice` (the
+	 * bot's own line about a failure). Absent: something the agent said itself.
+	 */
+	kind?: OutgoingKind;
 }
+
+export type OutgoingKind = 'answer' | 'approval' | 'reminder' | 'notice';
 
 export type OutboxStatus = 'pending' | 'sending' | 'sent' | 'failed' | 'unknown';
 
@@ -23,6 +31,7 @@ export interface OutboxRow {
 	retry_at: number | null;
 	sent_at: number | null;
 	error: string | null;
+	kind: OutgoingKind | null;
 }
 
 /** How often one message is tried before it is given up on. */
@@ -47,9 +56,9 @@ export class Outbox {
 	enqueue(message: OutgoingMessage): number {
 		const result = this.host.db
 			.prepare(
-				`INSERT INTO outbox (conversation, channel, target, text, created_at) VALUES (?, ?, ?, ?, ?)`,
+				`INSERT INTO outbox (conversation, channel, target, text, created_at, kind) VALUES (?, ?, ?, ?, ?, ?)`,
 			)
-			.run(message.conversation, message.channel, message.target, message.text, Date.now());
+			.run(message.conversation, message.channel, message.target, message.text, Date.now(), message.kind ?? null);
 		return Number(result.lastInsertRowid);
 	}
 

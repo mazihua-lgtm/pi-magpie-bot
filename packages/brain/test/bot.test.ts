@@ -32,6 +32,12 @@ afterEach(async () => {
 	for (const cleanup of cleanups.splice(0)) await cleanup();
 });
 
+/** Waits for `check`, up to a bound far below the fallback tick the tests rule out. */
+async function until(check: () => boolean, ms = 3_000): Promise<void> {
+	const end = Date.now() + ms;
+	while (!check() && Date.now() < end) await new Promise((resolve) => setTimeout(resolve, 20));
+}
+
 describe('bot recovery', () => {
 	it('tells the user about a message whose answer died with the process, and does not answer it twice', async () => {
 		const dir = await dataDir();
@@ -255,7 +261,7 @@ describe('event-driven wakeups', () => {
 		cleanups.push(async () => stop());
 
 		bot.ingest({ source: 'cli', sourceKey: 'wake-1', channel: 'cli', target: 'me', text: '你好' });
-		await new Promise((resolve) => setTimeout(resolve, 400));
+		await until(() => sent.length > 0);
 
 		expect(sent.length).toBeGreaterThan(0);
 		stop();
@@ -298,7 +304,9 @@ describe('event-driven wakeups', () => {
 		const event = { source: 'cli', sourceKey: 'dup-1', channel: 'cli', target: 'me', text: '你好' };
 		expect(bot.ingest(event)).toBe(true);
 		expect(bot.ingest(event)).toBe(false);
-		await new Promise((resolve) => setTimeout(resolve, 400));
+		await until(() => sent.length > 0);
+		// Long enough for a second answer to show up, if one were coming.
+		await new Promise((resolve) => setTimeout(resolve, 300));
 
 		// One answer, not two.
 		expect(sent.filter((text) => text.length > 0).length).toBe(1);
