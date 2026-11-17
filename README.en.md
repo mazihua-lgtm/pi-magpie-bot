@@ -9,14 +9,15 @@
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue" alt="MIT"></a>
   <a href="https://github.com/mazihua-lgtm/pi-magpie-bot/releases"><img src="https://img.shields.io/github/v/release/mazihua-lgtm/pi-magpie-bot" alt="release"></a>
   <img src="https://img.shields.io/badge/node-%E2%89%A524-339933" alt="node 24+">
-  <img src="https://img.shields.io/badge/Telegram%20%C2%B7%20Feishu%20%C2%B7%20WeCom%20%C2%B7%20Web-channels-5b8def" alt="channels">
+  <img src="https://img.shields.io/badge/Android%20%C2%B7%20Web%20%C2%B7%20Telegram-channels-5b8def" alt="channels">
 </p>
 
-<p align="center"><a href="README.md">中文</a> · <b>English</b> · <a href="#quick-start">Quick start</a> · <a href="#telegram">Telegram</a> · <a href="#feishu--lark">Feishu</a> · <a href="#wecom-企业微信">WeCom</a> · <a href="docs/architecture.md">Architecture</a> · <a href="docs/own-models.md">Own models</a></p>
+<p align="center"><a href="README.md">中文</a> · <b>English</b> · <a href="#android-app">Android app</a> · <a href="#quick-start">Quick start</a> · <a href="#telegram">Telegram</a> · <a href="docs/architecture.md">Architecture</a> · <a href="docs/own-models.md">Own models</a></p>
 
 **An always-on personal assistant you run yourself.** It remembers things, keeps reminders across
-restarts, and talks to you in a browser, on Telegram, on Feishu / Lark or on WeCom. It speaks through free
-models out of the box: no account, no API key, no bill.
+restarts, looks things up on the web, and lives in its own Android app, or on your computer or server
+behind a browser or Telegram. It speaks through free models out of the box: no account, no API key,
+no bill.
 
 ```
 You: remind me to turn off the stove in ten minutes
@@ -44,6 +45,47 @@ else's server and you pay monthly for them. This project hands you the same piec
 - **Nothing touches your machine without a yes.** Let it read your files or run a command and it
   asks first, in the chat, every time.
 
+## Android app
+
+<p align="center">
+  <img src="docs/android.png" alt="The Android app: the first screen, remembering something, the list of chats" width="860">
+</p>
+
+The whole assistant fits in one Android app: the model gateway, the memory and the reminders all run
+on the phone, with no computer and no server. The screens are native (Jetpack Compose) and made to
+feel like apps such as Grok:
+
+- **Many chats**: search, pin, rename and delete them in the drawer; a new chat is titled by the model.
+- **Answers as they are written**: the thinking and the steps it took ("searched 4 times · read 1
+  page") fold into one line you can open; stop it at any time.
+- **On the web**: for news, weather, prices and anything else that changes, it searches first (Bing,
+  reachable in China) and says where the answer came from.
+- **Memory and reminders**: "remember…", "wake me at seven" is all it takes; the reminder and memory
+  pages let you add, change and delete them yourself. A reminder arrives as a notification, phone
+  locked or not.
+- **Easy to read**: headings, lists, code blocks (one tap to copy) and tables are laid out; answers can
+  be copied, shared or read aloud.
+- **Your choice of model**: each chat can use its own model, a "think harder" switch appears for
+  models that reason, photos can go to models that see, and one key in Settings connects DeepSeek,
+  Kimi, Qwen and five more.
+- **Voice input**, and dark, light or system theme.
+
+The first launch prepares the environment on the phone (about 300 MB, a few minutes); after that it
+stays running in the background. Let it run "without battery restrictions" in the system settings,
+or the phone may close it to save power and reminders will be late. 64-bit ARM phones only (nearly
+every recent Android phone).
+
+To build it yourself:
+
+```sh
+pnpm install
+pnpm android:payload                       # packs the environment and this repository into assets
+cd android && gradle :app:assembleRelease  # needs JDK 17+ and the Android SDK
+```
+
+The APK lands in `android/app/build/outputs/apk/release/`, about 100 MB. How the app talks to the
+assistant on the phone is in **[docs/app-api.md](docs/app-api.md)**.
+
 ## Quick start
 
 **Nothing to install first.** Open a terminal and paste one line:
@@ -70,7 +112,7 @@ pi-magpie-bot uninstall   # remove it (chats and memory are kept by default)
 ![Saying "remind me to turn off the stove in ten minutes": the reminder is scheduled, the model is free, no key anywhere](docs/chat.png)
 
 **Things to try first:** "remind me to turn off the stove in ten minutes", "remember that I am
-allergic to peanuts", "remind me about the meeting at 8 tomorrow", "what did I just ask you to remember?"
+allergic to peanuts", "remind me about the meeting at 8 tomorrow", "what is in the news today?"
 
 ### Privacy in one sentence
 
@@ -125,7 +167,10 @@ own model.
 **The first account that talks to it becomes the owner**; anyone else is refused. To let more
 people in, add their ids to `ALLOWED_USERS` in `.env`, comma separated. Setting it disables first-come ownership: only the list may talk, so put yourself in it.
 
-### Feishu / Lark
+<details>
+<summary><b>Also on Feishu / Lark and WeCom</b></summary>
+
+#### Feishu / Lark
 
 No public address needed (it uses the official long connection).
 
@@ -141,7 +186,7 @@ No public address needed (it uses the official long connection).
 Private chats only; groups are ignored. As with Telegram, the first person to talk to it becomes the
 owner. Text messages only for now.
 
-### WeCom (企业微信)
+#### WeCom (企业微信)
 
 No public address needed (official long connection). **This is WeCom, not personal WeChat**: only
 people inside your WeCom organisation can reach it.
@@ -154,6 +199,8 @@ people inside your WeCom organisation can reach it.
 Private chats only; groups are ignored. The first person to talk to it becomes the owner. Text and
 voice (the platform's own transcript) are understood; images and files get a polite "not supported".
 Not yet verified against a real bot, so please open an issue if it misbehaves.
+
+</details>
 
 ## Bring your own model
 
@@ -209,11 +256,15 @@ To run magpie in its own container (for example several bots sharing one gateway
 
 | What | How you ask | Under the hood |
 | --- | --- | --- |
-| Chat | just type | pi-durable sessions |
+| Chat | just type | pi-durable sessions; one device can keep many chats |
+| Answers as they are written | automatic | the session's live state, pushed to the app: the partial answer, its thinking and its steps |
+| The web | "what is in the news today?" | `web_search` (cn.bing.com) and `web_fetch`, which refuse local and private addresses |
+| Pictures | send a photo in the app | only with a model that can see; the picture goes to it with the message |
 | Remember | "remember my car is a blue BYD" | Markdown under `memory/`; the index goes in every prompt, the note itself is read on demand |
 | Remind | "wake me at seven tomorrow" | a `schedules` table checked every 2 seconds (`TICK_MS`), a due reminder missed while the process was down fires once on the next start |
 | Long tasks | it decides | the `send_message` tool speaks first, then works |
 | Read files / run commands | set `WORKSPACE_DIR` in `.env` | an approval card in the chat every time; "yes" runs it |
+| Android app | install the APK | the whole assistant on the phone; the native screens talk to it over loopback |
 | Web | `pnpm start` | a built-in HTTP server, no external dependency |
 | Telegram | a token in `.env` | long polling, no public IP needed |
 | Feishu / Lark | App ID and Secret in `.env` | the official long connection, no public IP needed |
@@ -256,7 +307,7 @@ exists:
   is this project's own, about three thousand lines across `packages/*/src`, short enough to read.
 
 ```
-Telegram / Feishu / WeCom / web ──▶ inbox (dedupe, queue) ──▶ pi-durable session ──▶ outbox ──▶ you
+Android app / web / Telegram ──▶ inbox (dedupe, queue) ──▶ pi-durable session ──▶ outbox ──▶ you
                      ▲                            │
                      └────── schedules ───────────┘   (reminders)
 ```
@@ -284,6 +335,12 @@ a crash: **[docs/architecture.md](docs/architecture.md)**, with an English secti
   can claim the bot first-come; only the listed people can use it.
 - The Telegram offset advances before a message is handled: a crash mid-handling loses that one
   message (at most once, never answered twice).
+- The Android app is 64-bit ARM only; the APK is about 100 MB and unpacks about 300 MB more on first
+  launch, and after an update the assistant takes a minute or two to come up. Pictures need a model
+  that can see (the free pool's cannot); voice input uses the phone's own speech recognition, and
+  the microphone is hidden when there is none.
+- Web search goes through Bing China; when it finds nothing or is throttled, the assistant says so
+  rather than making something up.
 
 ## Roadmap to sustainability
 
@@ -303,8 +360,8 @@ on their own. The ways it can eventually pay for itself come later, not before:
   vendor wholesale and pass it on at cost. The free promise does not shrink because
   of it.
 
-The first release is the Android app and one-click install. Everything else waits
-until people are actually using it.
+The Android app and one-click install are here. Everything else waits until people are
+actually using it.
 
 ## Development
 
@@ -317,8 +374,8 @@ pnpm smoke:bot     # run the whole chain without a chat platform
 ```
 
 Packages: `packages/gateway` (models), `packages/events` (host tables), `packages/memory`
-(memory files), `packages/brain` (sessions and tools), `packages/channels/*` (Telegram, Feishu, WeCom, web),
-`apps/bot` (the entry point).
+(memory files), `packages/brain` (sessions and tools), `packages/channels/*` (web and the app API,
+Telegram, Feishu, WeCom), `apps/bot` (the entry point), `android/` (the Android app).
 
 ## License
 

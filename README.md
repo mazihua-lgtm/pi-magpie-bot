@@ -9,12 +9,12 @@
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue" alt="MIT"></a>
   <a href="https://github.com/mazihua-lgtm/pi-magpie-bot/releases"><img src="https://img.shields.io/github/v/release/mazihua-lgtm/pi-magpie-bot" alt="release"></a>
   <img src="https://img.shields.io/badge/node-%E2%89%A524-339933" alt="node 24+">
-  <img src="https://img.shields.io/badge/Telegram%20%C2%B7%20Feishu%20%C2%B7%20WeCom%20%C2%B7%20Web-channels-5b8def" alt="channels">
+  <img src="https://img.shields.io/badge/Android%20%C2%B7%20Web%20%C2%B7%20Telegram-channels-5b8def" alt="channels">
 </p>
 
-<p align="center">中文 · <b><a href="README.en.md">English</a></b> · <a href="#快速开始--quick-start">快速开始</a> · <a href="#接到-telegram">Telegram</a> · <a href="#接到飞书">飞书</a> · <a href="#接到企业微信">企业微信</a> · <a href="docs/architecture.md">架构</a> · <a href="docs/own-models.md">自带模型</a></p>
+<p align="center">中文 · <b><a href="README.en.md">English</a></b> · <a href="#安卓-app--android">安卓 App</a> · <a href="#快速开始--quick-start">快速开始</a> · <a href="#接到-telegram">Telegram</a> · <a href="docs/architecture.md">架构</a> · <a href="docs/own-models.md">自带模型</a></p>
 
-**一个一直在线、会记事、会提醒你的私人助理。** 跑在你自己的电脑或服务器上，用免费模型就能开口说话：不用注册账号，不用 API key。在浏览器、Telegram、飞书、企业微信里都能找到它。
+**一个一直在线、会记事、会提醒你、能上网查最新消息的私人助理。** 装在你自己的安卓手机上，或者跑在你的电脑、服务器上，用免费模型就能开口说话：不用注册账号，不用 API key。
 
 > An always-on personal assistant you run yourself: memory, reminders, free models out of the box (no account, no API key).
 
@@ -34,6 +34,34 @@ Grok Bot 这类产品好用，但你的对话、记忆、日程都在别人服�
 - **记录在你手里**：对话、记忆、定时任务都是本地 SQLite 和 Markdown 文件，拷走就是迁移（模型那一头见下面的「隐私」）。
 - **断电不死**：消息先落盘再处理，重启后照常接着干，不会同一句回答你两遍；真被掐断在回答一半的那条，它会主动跟你说一声「刚才那条中断了」。
 - **能碰到的东西要你点头**：让它读写你的文件夹、执行命令，每次都要在聊天里回「是」。
+
+## 安卓 App / Android
+
+<p align="center">
+  <img src="docs/android.png" alt="安卓 App：首页、记住一件事、对话列表" width="860">
+</p>
+
+整个助理装进一个安卓 App：模型网关、记忆、提醒都跑在手机里，不用电脑，不用服务器。界面是原生的（Jetpack Compose），照着 Grok 这类 App 的手感做：
+
+- **多个对话**：侧栏里搜索、置顶、重命名、删除；新对话的标题由模型自己起。
+- **边想边说**：回答一个字一个字出来，思考过程和它做过的事（「搜索了 4 次 · 看了 1 个网页」）折成一行，点开看细节；随时可以停。
+- **能上网**：问新闻、天气、价格这类会变的事，它先搜再答（国内能用的必应），并说出处。
+- **记性和提醒**：「记住……」「明早七点叫我」说一句就行；提醒页、记忆页里也能自己加、改、删。到点了锁着屏也会来通知。
+- **好读**：标题、列表、代码块（一键复制）、表格都排好版；回答可以复制、分享、朗读。
+- **模型随你换**：每段对话可以选不同的模型，会深度思考的模型多一个「深度思考」开关；能看图的模型可以发照片；设置里填一个 key 就接上 DeepSeek、Kimi、通义等 8 家。
+- **语音输入**、深色 / 浅色 / 跟随系统。
+
+第一次打开要在手机上准备运行环境（约 300 MB，几分钟），之后它就常驻后台。请在系统里允许它「不受省电限制」，否则手机可能为了省电把它关掉，提醒就不准时了。只支持 64 位 ARM 手机（近几年的安卓手机基本都是）。
+
+自己打包：
+
+```sh
+pnpm install
+pnpm android:payload                       # 把运行环境和这个仓库打进 assets
+cd android && gradle :app:assembleRelease  # 需要 JDK 17+ 和 Android SDK
+```
+
+安装包在 `android/app/build/outputs/apk/release/`，约 100 MB。App 和手机里的助理之间走的接口写在 **[docs/app-api.md](docs/app-api.md)**。
 
 ## 快速开始 / Quick start
 
@@ -57,7 +85,7 @@ pi-magpie-bot uninstall   # 卸载（聊天记录和记忆默认留着）
 
 ![浏览器里说一句「十分钟后提醒我关火」，它就把提醒排进了日程：模型是免费的，没填任何 key](docs/chat.png)
 
-**可以先对它说这些：**「十分钟后提醒我关火」「记住：我对花生过敏」「明天早上八点提醒我开会」「我刚才让你记了什么？」
+**可以先对它说这些：**「十分钟后提醒我关火」「记住：我对花生过敏」「明天早上八点提醒我开会」「今天有什么新闻？」
 
 ### 隐私：一句话说清
 
@@ -96,7 +124,10 @@ magpie plugin login our-free-model
 
 **第一个跟它说话的账号会成为主人**，其他人发消息会被拒绝。想多几个人用，把他们的 id 加到 `.env` 的 `ALLOWED_USERS`（逗号分隔）——注意设了它就不再自动认主人，你自己也得在名单里。
 
-### 接到飞书
+<details>
+<summary><b>还能接到飞书、企业微信</b></summary>
+
+#### 接到飞书
 
 不需要公网地址（用官方长连接）。
 
@@ -106,7 +137,7 @@ magpie plugin login our-free-model
 
 只回单聊，群聊忽略；和 Telegram 一样，第一个跟它说话的人成为主人。目前只看得懂文字消息。
 
-### 接到企业微信
+#### 接到企业微信
 
 不需要公网地址（用官方长连接）。**这是企业微信，不是个人微信**：只有你企业微信里的同事/自己能找到它。
 
@@ -114,6 +145,8 @@ magpie plugin login our-free-model
 2. 把它们填到 `.env` 的 `WECOM_BOT_ID`、`WECOM_BOT_SECRET`，`pnpm start`，看到 `[wecom] connected` 就是通了，在企业微信里给机器人发单聊消息。
 
 只回单聊，群聊忽略；第一个跟它说话的人成为主人。看得懂文字和语音（用平台自己的转写），图片文件会提示不支持。还没拿真实机器人验证过，遇到问题请提 issue。
+
+</details>
 
 ## 进阶：用你自己的模型 / Bring your own model
 
@@ -154,11 +187,15 @@ docker compose up -d        # 在仓库根目录跑，.env 就在旁边
 
 | 能力 | 怎么用 | 背后是什么 |
 | --- | --- | --- |
-| 聊天 | 直接说 | pi-durable 的持久化会话 |
+| 聊天 | 直接说 | pi-durable 的持久化会话；一台设备可以开多个对话 |
+| 边想边说 | 自动 | 跟着会话的实时状态，把写到一半的回答、思考和工具步骤推给 App |
+| 上网 | 「今天有什么新闻？」 | `web_search`（cn.bing.com）和 `web_fetch`，拒绝访问本机和内网地址 |
+| 看图 | 在 App 里发照片 | 模型支持看图才开，图片随消息交给模型 |
 | 记事 | 「记住我的车是蓝色比亚迪」 | `memory/` 下的 Markdown，索引每次进上下文，正文按需读 |
 | 提醒 | 「明早七点叫我」 | `schedules` 表 + 每 2 秒看一次（`TICK_MS` 可改），进程挂了下次启动补一次 |
 | 长任务先回一句 | 它自己判断 | `send_message` 工具先发后干 |
 | 读写文件 / 执行命令 | 在 `.env` 设 `WORKSPACE_DIR` | 每次执行前发审批卡，回「是」才动 |
+| 安卓 App | 装 APK | 手机里跑完整助理，原生界面经本机回环口说话 |
 | 网页 | `pnpm start` | 内置 HTTP 服务，无外部依赖 |
 | Telegram | `.env` 填 token | 长轮询，不需要公网 IP |
 | 飞书 / Lark | `.env` 填 App ID 和 Secret | 官方长连接，不需要公网 IP |
@@ -195,7 +232,7 @@ docker compose up -d        # 在仓库根目录跑，.env 就在旁边
 - 上层这层薄薄的胶水（收件箱、发件箱、定时表、审批表、记忆目录、频道适配）是这个项目自己的，`packages/*/src` 加起来三千行上下，看得完。
 
 ```
-Telegram / 飞书 / 企业微信 / 网页 ──▶ inbox（去重、排队）──▶ pi-durable 会话 ──▶ outbox ──▶ 你
+安卓 App / 网页 / Telegram ──▶ inbox（去重、排队）──▶ pi-durable 会话 ──▶ outbox ──▶ 你
                         ▲                      │
                         └── schedules ─────────┘   （定时任务）
 ```
@@ -213,6 +250,8 @@ Telegram / 飞书 / 企业微信 / 网页 ──▶ inbox（去重、排队）�
 - 读、写、改文件和跑命令**都要你点头**；但工作目录之外的路径只靠这张审批卡把关，没有沙箱，批之前看清路径。
 - Telegram 只接私聊，群消息一律忽略；设了 `ALLOWED_USERS` 就不再「先到先得」认主人，只有名单里的人能用（你也得在名单里）。
 - Telegram 的消息偏移在处理前就前进：处理中途崩溃，那一条消息会丢（最多一次，不会重复回答）。
+- 安卓 App 只有 64 位 ARM 版，安装包约 100 MB，第一次打开要再解出约 300 MB；更新后助理要一两分钟才起来。看图要换能看图的模型，免费池里的模型看不了；语音输入靠手机自带的语音识别，没有就不显示麦克风。
+- 上网搜索走国内版必应，搜不到或被限流时它会说搜不到，不会编。
 
 ## 以后怎么活下去 / Roadmap to sustainability
 
@@ -224,7 +263,7 @@ Telegram / 飞书 / 企业微信 / 网页 ──▶ inbox（去重、排队）�
 - **托管版**（等有人要）：不想自己维护的人，让我们替他跑常驻服务、备份记忆和提醒、保证在线，按月付费买的是「省心」，不是模型本身。
 - **模型通道**（更后面）：免费池稳了、有了量之后，跟一家模型方谈个批发价，做「充一点用很久」的内部通道。免费承诺不会因为这条而缩水。
 
-第一版先把安卓版和一键安装做好，其余的等用户用出来再说。
+安卓 App 和一键安装已经有了，其余的等用户用出来再说。
 
 ## 开发 / Development
 
@@ -236,7 +275,7 @@ pnpm smoke         # 直接问一遍网关里的第一个模型
 pnpm smoke:bot     # 不用聊天平台，跑一遍完整链路
 ```
 
-目录：`packages/gateway`（模型）、`packages/events`（宿主表）、`packages/memory`（记忆文件）、`packages/brain`（会话与工具）、`packages/channels/*`（Telegram、飞书、企业微信、网页）、`apps/bot`（入口）。
+目录：`packages/gateway`（模型）、`packages/events`（宿主表）、`packages/memory`（记忆文件）、`packages/brain`（会话与工具）、`packages/channels/*`（网页与 App 接口、Telegram、飞书、企业微信）、`apps/bot`（入口）、`android/`（安卓 App）。
 
 ## 许可 / License
 
