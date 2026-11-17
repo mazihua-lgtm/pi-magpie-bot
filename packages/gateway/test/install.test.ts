@@ -4,7 +4,7 @@ import { createServer, type Server } from 'node:http';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { addProvider, checksumFor, ensureFreeRoute, FREE_GROUP, installMagpie, releaseAsset } from '../src/install.ts';
+import { addProvider, checksumFor, ensureFreeRoute, FREE_GROUP, hasConfiguredModel, installMagpie, releaseAsset } from '../src/install.ts';
 
 const scratch: string[] = [];
 const servers: Server[] = [];
@@ -29,6 +29,30 @@ describe('release asset', () => {
 	it('has nothing for a system magpie does not build for', () => {
 		expect(releaseAsset('win32', 'x64')).toBeUndefined();
 		expect(releaseAsset('linux', 'ia32')).toBeUndefined();
+	});
+});
+
+describe('offline model check', () => {
+	const fakeProviders = async (dir: string, answer: string, fails = false) => {
+		const fake = join(dir, 'magpie');
+		await writeFile(fake, `#!/bin/sh\n[ "$1" = providers ] || exit 2\n${fails ? 'exit 1' : `printf '%s\\n' '${answer}'`}\n`);
+		await chmod(fake, 0o755);
+		return fake;
+	};
+
+	it('sees a provider from magpie\'s config with the gateway down', async () => {
+		const fake = await fakeProviders(await tempDir(), 'mock custom  mock  127.0.0.1:9000  1 of 1 models');
+		expect(await hasConfiguredModel(fake)).toBe(true);
+	});
+
+	it('recognises an empty config', async () => {
+		const fake = await fakeProviders(await tempDir(), 'no providers yet · magpie provider add deepseek sk-…');
+		expect(await hasConfiguredModel(fake)).toBe(false);
+	});
+
+	it('reports nothing when the command itself fails, so the caller tries the pool', async () => {
+		const fake = await fakeProviders(await tempDir(), '', true);
+		expect(await hasConfiguredModel(fake)).toBeUndefined();
 	});
 });
 

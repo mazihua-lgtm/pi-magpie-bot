@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+	<string name="app_name">我的助理</string>
+	<string name="setup_title">我的助理</string>
+	<string name="setup_body">第一次打开要在这台手机上准备运行环境，大约 300 MB，需要几分钟。\n\n请插着电、连着网，不要锁屏。准备好以后它会一直在后台运行，你说过的话和定下的提醒都留在这台手机上。</string>
+	<string name="setup_button">开始准备</string>
+	<string name="setup_running">正在准备…</string>
+	<string name="setup_done">准备好了，正在启动…</string>
+	<string name="running">助理在运行</string>
+	<string name="starting">助理正在启动…</string>
+	<string name="installing">正在准备运行环境</string>
+	<string name="failed">没能启动：%1$s</string>
+	<string name="battery">让它在后台一直跑</string>
+	<string name="battery_body">Android 会为了省电把后台应用关掉，那样到点的提醒就不会来了。允许这个应用不受省电限制，它才留得住。</string>
+	<string name="battery_ok">好</string>
+	<string name="battery_later">以后再说</string>
+</resources>

@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- π, in white, on the brand blue the chat page uses. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+	android:width="108dp"
+	android:height="108dp"
+	android:viewportWidth="108"
+	android:viewportHeight="108">
+	<path
+		android:fillColor="#FFFFFF"
+		android:pathData="M32,39h44v9H32z" />
+	<path
+		android:fillColor="#FFFFFF"
+		android:pathData="M40,48h9v28h-9z" />
+	<path
+		android:fillColor="#FFFFFF"
+		android:pathData="M59,48h9v28h-9z" />
+</vector>

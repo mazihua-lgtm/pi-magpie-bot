@@ -285,6 +285,27 @@ a crash: **[docs/architecture.md](docs/architecture.md)**, with an English secti
 - The Telegram offset advances before a message is handled: a crash mid-handling loses that one
   message (at most once, never answered twice).
 
+## Roadmap to sustainability
+
+This project does not charge users today, and there is one line it will not cross:
+**no advertising, no business built on your data**. Memories and conversations are
+yours; monetising them would kill the thing.
+
+For now there is one job: make it free, good, and effortless, and let installs grow
+on their own. The ways it can eventually pay for itself come later, not before:
+
+- **Assistant that drives your own machine** (next): point the phone at your own
+  computer or server so it stays on around the clock. Free.
+- **Hosted tier** (when asked): for people who would rather not run it themselves —
+  we keep the service up, back up memories and reminders, and charge monthly for
+  the peace of mind, not for the model.
+- **Model channel** (later, once the free pool is solid): buy capacity from one
+  vendor wholesale and pass it on at cost. The free promise does not shrink because
+  of it.
+
+The first release is the Android app and one-click install. Everything else waits
+until people are actually using it.
+
 ## Development
 
 ```sh

@@ -22,6 +22,7 @@ import {
 	FREE_MODEL_PREFIX,
 	FREE_PLUGIN,
 	gatewayConfig,
+	hasConfiguredModel,
 	installMagpie,
 	listModels,
 } from '@pi-magpie-bot/gateway';
@@ -157,11 +158,15 @@ async function models(): Promise<Look> {
 		const start = env.MAGPIE_START !== '0';
 		// The free pool is signed up before anything listens. Not politeness:
 		// magpie's sign-in asks the running gateway for its management page and
-		// is refused, so it only works while no magpie is up.
+		// is refused, so it only works while no magpie is up. That sign-in takes
+		// minutes; check first whether a provider is already configured, or a
+		// phone that has a working model still waits three minutes on every boot.
 		let binary: string | undefined;
 		if (start && (wantsFree || !wanted)) {
 			binary = await magpieBinary();
-			if (binary) await ensureFreeRoute({ binary, log });
+			const configured = wanted ? undefined : binary ? await hasConfiguredModel(binary) : undefined;
+			if (configured === true) log('a provider is already configured; leaving the free pool alone');
+			else if (binary) await ensureFreeRoute({ binary, log });
 		}
 		const started = await ensureGateway(config, { start, installDir: ourBinDir, binary, log });
 		return { ids: (await listModels(config)).map((model) => model.id), binary: started.binary ?? binary };

@@ -6,3 +6,11 @@ data/
 .env
 .env.*
 !.env.example
+
+# Android: the build, the phone's own settings, and the payload an APK carries -
+# that last one is 150 MB and is built from scripts/android-payload.sh.
+build/
+android/.gradle/
+android/local.properties
+android/app/build/
+android/app/src/main/assets/bootstrap.payload

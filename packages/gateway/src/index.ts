@@ -6,6 +6,7 @@ export {
 	FREE_GROUP,
 	FREE_MODEL_PREFIX,
 	FREE_PLUGIN,
+	hasConfiguredModel,
 	installMagpie,
 	releaseAsset,
 	signInFree,

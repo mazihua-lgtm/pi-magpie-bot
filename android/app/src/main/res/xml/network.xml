@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+	The chat page is served from this phone's own loopback, so that is the only
+	place plain HTTP is allowed. A link the user taps opens in the browser, and
+	that browser has its own rules.
+-->
+<network-security-config>
+	<domain-config cleartextTrafficPermitted="true">
+		<domain includeSubdomains="false">127.0.0.1</domain>
+		<domain includeSubdomains="false">localhost</domain>
+	</domain-config>
+</network-security-config>

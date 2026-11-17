@@ -17,6 +17,8 @@ const RELEASES = 'https://github.com/yetone/magpie/releases/latest/download';
 
 /** The plugin that serves the anonymous free pool. */
 export const FREE_PLUGIN = 'https://github.com/mu-zi-lee/magpie-our-free-model';
+/** What that plugin is called once magpie has installed it: the name it is asked by. */
+const FREE_PACKAGE = 'magpie-our-free-model';
 /** The routing group the free pool goes into. */
 export const FREE_GROUP = 'free';
 /** How the plugin's models are named, before the group gathers them. */
@@ -155,6 +157,15 @@ export async function ensureFreeRoute(options: FreeRouteOptions): Promise<void> 
 	} catch (error) {
 		log(`the free-model plugin did not install: ${(error as Error).message.split('\n')[0]}`);
 	}
+	// The plugin runs the pool's channels on Node, and would fetch a second copy
+	// of Node to do it: forty megabytes and a minute on a first run, on a phone
+	// that already has one - this process. It is told where to look instead.
+	try {
+		const wanted = { managed: { nodePath: process.execPath } };
+		await magpieRun(options.binary, ['plugin', 'options', FREE_PACKAGE, JSON.stringify(wanted)], 60_000);
+	} catch (error) {
+		log(`the free-model plugin kept its own Node: ${(error as Error).message.split('\n')[0]}`);
+	}
 	if ((await freePluginSignedIn(options.binary)) !== true) {
 		try {
 			await signInFree({ binary: options.binary, log });
@@ -171,6 +182,23 @@ export async function ensureFreeRoute(options: FreeRouteOptions): Promise<void> 
 		log(`routing group '${FREE_GROUP}' is in place`);
 	} catch (error) {
 		log(`the free routing group was not created: ${(error as Error).message.split('\n')[0]}`);
+	}
+}
+
+/**
+ * Whether magpie already has a provider configured, checked straight from its
+ * config with the gateway down. The free pool's sign-in needs the gateway
+ * stopped and can take minutes; a boot that already has a model must not pay
+ * that just to find out it has nothing to gain. `undefined` means the check
+ * itself failed, in which case the caller should try the pool as before.
+ */
+export async function hasConfiguredModel(binary: string, env: NodeJS.ProcessEnv = process.env): Promise<boolean | undefined> {
+	try {
+		const { stdout } = await run(binary, ['providers'], { env, timeout: 30_000 });
+		return !/no providers yet/i.test(stdout) && stdout.trim().length > 0;
+	} catch {
+		// A magpie too old for this command, or one that exited 1: try the pool.
+		return undefined;
 	}
 }
 

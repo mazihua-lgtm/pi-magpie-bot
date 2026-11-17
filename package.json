@@ -25,7 +25,8 @@
 		"smoke": "tsx scripts/smoke-gateway.ts",
 		"smoke:bot": "tsx scripts/smoke-bot.ts",
 		"smoke:durable": "tsx scripts/smoke-durable.ts",
-		"e2e": "bash scripts/e2e/run.sh"
+		"e2e": "bash scripts/e2e/run.sh",
+		"android:payload": "bash scripts/android-payload.sh"
 	},
 	"devDependencies": {
 		"@types/node": "^24.0.0",

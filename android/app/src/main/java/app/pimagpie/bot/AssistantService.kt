@@ -1,0 +1,237 @@
+package app.pimagpie.bot
+
+import android.app.Notification
+import android.app.NotificationChannel
+import android.app.NotificationManager
+import android.app.PendingIntent
+import android.app.Service
+import android.content.Context
+import android.content.Intent
+import android.content.pm.ServiceInfo
+import android.net.ConnectivityManager
+import android.os.Build
+import android.os.IBinder
+import org.json.JSONObject
+import java.io.File
+import java.net.HttpURLConnection
+import java.net.URL
+
+/**
+ * The assistant runs here, and this is the whole of why the app exists: a
+ * process that is still there at seven in the morning, with the phone locked.
+ */
+class AssistantService : Service() {
+	@Volatile
+	private var keepRunning = true
+	private var bot: Process? = null
+	private var worker: Thread? = null
+	private var watcher: Thread? = null
+
+	override fun onBind(intent: Intent?): IBinder? = null
+
+	override fun onCreate() {
+		super.onCreate()
+		channel(CHANNEL_RUN, getString(R.string.running), NotificationManager.IMPORTANCE_LOW)
+		channel(CHANNEL_ALERT, "提醒", NotificationManager.IMPORTANCE_HIGH)
+	}
+
+	override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+		if (intent?.action == ACTION_STOP) {
+			stopSelf()
+			return START_NOT_STICKY
+		}
+
+		// A restarted service (the system brought the process back) has nothing to
+		// unpack: the marker on disk is what says whether there is anything to run.
+		foreground(if (Payload.installed(this)) getString(R.string.starting) else getString(R.string.installing))
+
+		if (worker == null) worker = Thread({ work() }, "assistant").also { it.start() }
+		if (watcher == null) watcher = Thread({ watch() }, "reminders").also { it.start() }
+		return START_STICKY
+	}
+
+	override fun onDestroy() {
+		keepRunning = false
+		bot?.let { process ->
+			// proot holds the agent as its child; killing proot takes the tree.
+			process.destroy()
+		}
+		super.onDestroy()
+	}
+
+	private fun work() {
+		try {
+			nameservers()
+			if (!Payload.installed(this)) {
+				Progress.post(getString(R.string.installing), 0)
+				Payload.unpack(this) { percent -> Progress.post(getString(R.string.installing), percent) }
+				Logs.add("[app] the environment is unpacked")
+			}
+
+			while (keepRunning) runOnce()
+		} catch (error: Throwable) {
+			Logs.add("[app] ${error.javaClass.simpleName}: ${error.message}")
+			android.util.Log.e("assistant", "the assistant could not start", error)
+			Progress.failed(error)
+			stopSelf()
+		}
+	}
+
+	private fun runOnce() {
+		val started = System.currentTimeMillis()
+		val process = try {
+			ProcessBuilder(Runner.command(this))
+				.directory(Paths.root(this))
+				.redirectErrorStream(true)
+				.apply {
+					environment().clear()
+					environment().putAll(Runner.environment(this@AssistantService))
+				}
+				.start()
+		} catch (error: Exception) {
+			Logs.add("[app] could not start the assistant: ${error.message}")
+			Progress.post(getString(R.string.failed, error.message ?: ""), -1)
+			sleep(10_000)
+			return
+		}
+
+		bot = process
+		Progress.post(getString(R.string.running), -1)
+		foreground(getString(R.string.running))
+		process.inputStream.bufferedReader().useLines { lines -> lines.forEach { Logs.add(it) } }
+		val code = process.waitFor()
+		bot = null
+		if (!keepRunning) return
+
+		Logs.add("[app] the assistant stopped (exit $code)")
+		Progress.post(getString(R.string.failed, "exit $code"), -1)
+		// A run that lasted a while ended of its own accord; one that dies at once
+		// is a fault, and restarting it hot would only fill the log.
+		sleep(if (System.currentTimeMillis() - started < 10_000) 20_000 else 2_000)
+	}
+
+	/**
+	 * Reminders reach the page as they happen, so the page does not have to be
+	 * open: the same stream is read here, and anything that is news rather than
+	 * history becomes a notification.
+	 */
+	private fun watch() {
+		while (keepRunning) {
+			if (!listen()) sleep(3_000)
+		}
+	}
+
+	private fun listen(): Boolean {
+		val session = getSharedPreferences(PREFS, MODE_PRIVATE).getString(SESSION, null) ?: return false
+		val connection = URL("${Runner.BASE}/api/events").openConnection() as HttpURLConnection
+		return try {
+			connection.setRequestProperty("Cookie", "sid=$session")
+			connection.setRequestProperty("Accept", "text/event-stream")
+			connection.connectTimeout = 5_000
+			connection.readTimeout = 0
+
+			connection.inputStream.bufferedReader().useLines { lines ->
+				for (line in lines) {
+					if (!keepRunning) return true
+					if (!line.startsWith("data: ")) continue
+					val message = JSONObject(line.removePrefix("data: "))
+					// The history replays with a role; a message that just happened has not.
+					if (message.has("role")) continue
+					val text = message.optString("text")
+					if (text.isNotEmpty() && !App.onScreen) alert(text)
+				}
+			}
+			false
+		} catch (_: Exception) {
+			false
+		} finally {
+			connection.disconnect()
+		}
+	}
+
+	private fun alert(text: String) {
+		val manager = getSystemService(NotificationManager::class.java)
+		val open = PendingIntent.getActivity(
+			this, 0, Intent(this, MainActivity::class.java), PendingIntent.FLAG_IMMUTABLE,
+		)
+		val notification = Notification.Builder(this, CHANNEL_ALERT)
+			.setSmallIcon(android.R.drawable.ic_dialog_info)
+			.setContentTitle(getString(R.string.app_name))
+			.setContentText(text)
+			.setStyle(Notification.BigTextStyle().bigText(text))
+			.setAutoCancel(true)
+			.setContentIntent(open)
+			.build()
+		manager.notify(ALERT_ID++, notification)
+	}
+
+	private fun foreground(text: String) {
+		val open = PendingIntent.getActivity(
+			this, 0, Intent(this, MainActivity::class.java), PendingIntent.FLAG_IMMUTABLE,
+		)
+		val notification = Notification.Builder(this, CHANNEL_RUN)
+			.setSmallIcon(android.R.drawable.stat_notify_chat)
+			.setContentTitle(getString(R.string.app_name))
+			.setContentText(text)
+			.setOngoing(true)
+			.setContentIntent(open)
+			.build()
+		if (Build.VERSION.SDK_INT >= 34) {
+			startForeground(RUNNING_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE)
+		} else {
+			startForeground(RUNNING_ID, notification)
+		}
+	}
+
+	private fun channel(id: String, name: String, importance: Int) {
+		val manager = getSystemService(NotificationManager::class.java)
+		if (manager.getNotificationChannel(id) == null) {
+			manager.createNotificationChannel(NotificationChannel(id, name, importance))
+		}
+	}
+
+	/**
+	 * A proot has no resolver of its own: the phone's own name servers are written
+	 * where glibc looks for them. Without this, nothing the agent calls resolves.
+	 */
+	private fun nameservers() {
+		val lines = mutableListOf<String>()
+		val connectivity = getSystemService(ConnectivityManager::class.java)
+		for (network in connectivity.allNetworks) {
+			val properties = connectivity.getLinkProperties(network) ?: continue
+			for (server in properties.dnsServers) {
+				val line = "nameserver ${server.hostAddress}"
+				if (line !in lines) lines.add(line)
+			}
+		}
+		// Nothing reachable answers with no network at all, and the two everyone in
+		// China can reach are still better than an empty file when it comes back.
+		if (lines.isEmpty()) {
+			lines.add("nameserver 223.5.5.5")
+			lines.add("nameserver 8.8.8.8")
+		}
+		Paths.resolv(this).writeText(lines.joinToString("\n", postfix = "\n"))
+	}
+
+	private fun sleep(ms: Long) {
+		try {
+			Thread.sleep(ms)
+		} catch (_: InterruptedException) {
+			Thread.currentThread().interrupt()
+		}
+	}
+
+	companion object {
+		const val ACTION_STOP = "app.pimagpie.bot.STOP"
+		private const val CHANNEL_RUN = "running"
+		private const val CHANNEL_ALERT = "reminders"
+		private const val RUNNING_ID = 1
+		private var ALERT_ID = 100
+		private const val PREFS = "bot"
+		const val SESSION = "sid"
+
+		fun start(context: Context) {
+			context.startForegroundService(Intent(context, AssistantService::class.java))
+		}
+	}
+}
