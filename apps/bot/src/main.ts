@@ -242,10 +242,13 @@ async function startupModels(): Promise<Look> {
 	// added through its console — the one step a person has to do.
 	const poolEmpty = !ids.some((id) => id.startsWith(FREE_MODEL_PREFIX));
 	return await needsSetup({
-		title: '还不能聊天：magpie 里没有能用的模型',
+		// Plain words: this page is the first thing a phone user sees when the
+		// free models did not come through, and "magpie", "网关" and "渠道" mean
+		// nothing to them. The commands below are for whoever has a terminal.
+		title: '还不能聊天：还没有能用的模型',
 		reason: poolEmpty
-			? '免费池这次没给出模型：要么这个网络地址的额度用完了，要么要在它的控制台里接一个渠道。自己有 key 的话，填在下面就行。'
-			: '网关里现在没有这个模型。自己有 key 的话，填在下面就行。',
+			? '免费额度这次没发下来。你也可以用自己的账号：选一家，把它的密钥粘进来，马上就能用。'
+			: '现在没有这个模型。你也可以用自己的账号：选一家，把它的密钥粘进来。',
 		steps: poolEmpty
 			? [
 					{

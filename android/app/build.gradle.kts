@@ -16,8 +16,12 @@ android {
 		// unpacked into its own data directory, and the whole assistant is a proot
 		// that starts node from there. Termux is pinned the same way.
 		targetSdk = 28
-		versionCode = 1
-		versionName = "0.1.0"
+		// Bump on every payload change: the app compares this against the marker
+		// written when it last unpacked, and re-unpacks when they differ. Without
+		// that, an updated APK keeps running the old node, magpie and bot code,
+		// and an update looks like it did nothing.
+		versionCode = 2
+		versionName = "0.1.1"
 		// The environment inside is linux-arm64: one payload, so one kind of phone.
 		ndk { abiFilters += listOf("arm64-v8a") }
 	}

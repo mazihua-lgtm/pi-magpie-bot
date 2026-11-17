@@ -75,8 +75,10 @@ export function setupPage(options: SetupPageOptions): string {
 				`<li><code>${escape(step.command)}</code>${step.note ? `<p>${escape(step.note)}</p>` : ''}</li>`,
 		)
 		.join('');
+	// A raw URL as link text is noise to someone who does not read English docs
+	// anyway; the word that says what it is, is the useful part.
 	const docs = options.docsUrl
-		? `<p class="docs">说明在这里：<a href="${escape(options.docsUrl)}" rel="noreferrer">${escape(options.docsUrl)}</a></p>`
+		? `<p class="docs"><a href="${escape(options.docsUrl)}" rel="noreferrer">查看完整说明</a></p>`
 		: '';
 	return `<!doctype html>
 <html lang="zh-CN">
@@ -84,25 +86,30 @@ export function setupPage(options: SetupPageOptions): string {
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>还差一步</title>
 <style>
-  :root { color-scheme: light dark; }
+  :root { color-scheme: light dark; --brand: #1d63d8; --surface-2: #f1f2f4; --muted: #5f6368; --border: #c4c7cc; }
+  @media (prefers-color-scheme: dark) { :root { --surface-2: #26282b; --muted: #b0b3b8; --border: #5c6066; } }
   body { margin: 0; font: 16px/1.7 system-ui, -apple-system, "PingFang SC", sans-serif; display: grid; place-items: center; min-height: 100dvh; }
-  main { width: min(42rem, 88vw); padding: 24px; }
+  /* border-box, or 88vw + 48px of padding overflows every phone narrower than
+     about 400px - which is most of them. */
+  main { box-sizing: border-box; width: min(42rem, 100%); max-width: 42rem; padding: 24px 16px; }
   h1 { font-size: 22px; margin: 0 0 8px; }
   .reason { opacity: .75; margin: 0 0 20px; }
   ol { padding-left: 20px; }
   li { margin-bottom: 14px; }
-  code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 14px; background: #8882; padding: 6px 8px; border-radius: 6px; display: inline-block; word-break: break-all; }
+  code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 14px; background: var(--surface-2); padding: 6px 8px; border-radius: 6px; display: inline-block; word-break: break-all; }
   p { margin: 6px 0 0; }
-  .docs { opacity: .6; font-size: 14px; margin-top: 24px; }
+  .docs { font-size: 14px; margin-top: 24px; color: var(--muted); }
   a { color: inherit; }
-  form { margin: 0 0 24px; padding: 16px; border: 1px solid #8884; border-radius: 12px; }
-  label { display: block; margin-bottom: 12px; font-size: 14px; opacity: .8; }
-  select, input, button { box-sizing: border-box; font: inherit; width: 100%; margin-top: 6px; padding: 9px 10px; border-radius: 8px; border: 1px solid #8886; background: transparent; color: inherit; }
-  button { border: 0; background: #3b82f6; color: #fff; font-weight: 600; }
+  form { margin: 0 0 24px; padding: 16px; border: 1px solid var(--border); border-radius: 12px; }
+  label { display: block; margin-bottom: 12px; font-size: 14px; color: var(--muted); }
+  select, input, button { box-sizing: border-box; font: inherit; width: 100%; margin-top: 6px; padding: 11px 12px; border-radius: 12px; border: 1px solid var(--border); background: transparent; color: inherit; }
+  button { border: 0; background: var(--brand); color: #fff; font-weight: 600; }
   .signup { font-size: 14px; margin: 0 0 12px; }
   details { margin-top: 8px; }
-  summary { cursor: pointer; opacity: .7; font-size: 14px; }
-  #says { font-size: 14px; min-height: 1.5em; opacity: .8; }
+  summary { cursor: pointer; color: var(--muted); font-size: 14px; }
+  #says { font-size: 15px; min-height: 1.5em; color: var(--muted); }
+  #says[data-tone="error"] { color: #c62828; }
+  @media (prefers-color-scheme: dark) { #says[data-tone="error"] { color: #ff8a80; } }
 </style>
 <main>
   <h1>${escape(options.title)}</h1>
@@ -129,16 +136,16 @@ function keyForm(options: SetupPageOptions): string {
 		})
 		.join('');
 	return `<form id="key">
-    <label>自己有 key 的话填在这里，不用开终端
+    <label>也可以用自己的账号：选一家
       <select name="preset">${choices}</select>
     </label>
     <p id="signup" class="signup"></p>
-    ${options.password ? '<label>访问密码（部署时设的 WEB_PASSWORD）<input name="password" type="password" autocomplete="current-password" required></label>' : ''}
-    <label>API key
-      <input name="key" type="password" autocomplete="off" spellcheck="false" required>
+    ${options.password ? '<label>访问密码<input name="password" type="password" autocomplete="current-password" required></label>' : ''}
+    <label>把它的密钥粘贴在这里
+      <input name="key" type="password" autocomplete="off" spellcheck="false" required placeholder="sk-…">
     </label>
     <button>保存并继续</button>
-    <p id="says"></p>
+    <p id="says" role="status" aria-live="polite"></p>
   </form>
   <script>
     const picker = document.querySelector('#key select');
@@ -159,25 +166,45 @@ function keyForm(options: SetupPageOptions): string {
     }
     picker.addEventListener('change', showSignup);
     showSignup();
+    const says = document.getElementById('says');
+    const tell = (text, tone) => {
+      says.textContent = text;
+      says.dataset.tone = tone;
+    };
     document.getElementById('key').addEventListener('submit', async (event) => {
       event.preventDefault();
       const form = event.target;
-      const says = document.getElementById('says');
-      says.textContent = '正在保存…';
+      tell('正在保存…', 'info');
       try {
         const response = await fetch('/api/setup/key', {
           method: 'POST',
           headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ preset: form.preset.value, key: form.key.value, password: form.password ? form.password.value : undefined }),
+          body: JSON.stringify({ preset: form.preset.value, key: form.key.value, password: form.password ? form.password.value : '' }),
         });
         const body = await response.json().catch(() => ({}));
         if (!response.ok) {
-          says.textContent = body.error || '没能保存这个 key。';
+          tell(body.error || '这个密钥没能保存，检查一下有没有多复制了空格。', 'error');
           return;
         }
-        says.textContent = body.note || '好了，正在启动，等几秒刷新这一页。';
+        tell('密钥已保存，正在启动…', 'info');
+        // The page's server closes itself once the key is in and the chat takes
+        // the port, so waiting here would show a dead page. Ask until it answers,
+        // then reload into the chat.
+        for (let tries = 0; tries < 40; tries++) {
+          await new Promise((done) => setTimeout(done, 1_500));
+          try {
+            const ping = await fetch('/healthz', { cache: 'no-store' });
+            if (ping.ok) {
+              location.reload();
+              return;
+            }
+          } catch (error) {
+            // Still switching over; keep waiting.
+          }
+        }
+        tell('密钥已保存，但助理还没起来。刷新这一页再试。', 'error');
       } catch (error) {
-        says.textContent = '连不上这个页面了，刷新一下再试。';
+        tell('连不上这个页面了，刷新一下再试。', 'error');
       }
     });
   </script>`;

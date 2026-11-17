@@ -43,6 +43,7 @@ class MainActivity : Activity() {
 	private lateinit var status: TextView
 	private lateinit var log: TextView
 	private lateinit var start: Button
+	private lateinit var body: TextView
 	private var web: WebView? = null
 	private val handler = Handler(Looper.getMainLooper())
 
@@ -52,6 +53,11 @@ class MainActivity : Activity() {
 		askNotifications()
 
 		if (Payload.installed(this)) {
+			// Already set up: this is the everyday launch. Saying "first time, about
+			// 300 MB" here would be a lie, and leaving a big "start preparing" button
+			// on screen would make people tap it every time.
+			body.text = getString(R.string.setup_running)
+			start.visibility = View.GONE
 			AssistantService.start(this)
 			waitForAssistant()
 		} else {
@@ -85,7 +91,7 @@ class MainActivity : Activity() {
 			setTextColor(Color.parseColor("#1A1A1A"))
 			setTypeface(typeface, Typeface.BOLD)
 		}
-		val body = TextView(this).apply {
+		body = TextView(this).apply {
 			text = getString(R.string.setup_body)
 			setTextSize(TypedValue.COMPLEX_UNIT_SP, 15f)
 			setTextColor(Color.parseColor("#444444"))
@@ -158,7 +164,14 @@ class MainActivity : Activity() {
 
 	private fun render(text: String, percent: Int) {
 		status.text = text
-		if (percent >= 0 && !Payload.installed(this)) {
+		if (Progress.failed) {
+			// A spinner with no way out is the worst thing this screen can do: the
+			// only fix a person has is to kill and reopen, and it fails the same way.
+			progressBar.visibility = View.GONE
+			start.text = getString(R.string.setup_retry)
+			start.visibility = View.VISIBLE
+			start.setOnClickListener { begin() }
+		} else if (percent >= 0 && !Payload.installed(this)) {
 			progressBar.visibility = View.VISIBLE
 			progressBar.isIndeterminate = false
 			progressBar.progress = percent
@@ -188,7 +201,13 @@ class MainActivity : Activity() {
 				}
 				Thread.sleep(1_000)
 			}
-			handler.post { status.text = Logs.tail() }
+			// Ten minutes gone: say it in a sentence and give the button back. The
+			// English log is still behind a long press for whoever can use it.
+			handler.post {
+				Progress.failed = true
+				Progress.line = getString(R.string.setup_timeout)
+				render(getString(R.string.setup_timeout), -1)
+			}
 		}.start()
 	}
 

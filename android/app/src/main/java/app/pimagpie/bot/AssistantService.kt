@@ -90,7 +90,10 @@ class AssistantService : Service() {
 				.start()
 		} catch (error: Exception) {
 			Logs.add("[app] could not start the assistant: ${error.message}")
-			Progress.post(getString(R.string.failed, error.message ?: ""), -1)
+			// `failed` turns the raw exception into a sentence a person can act on
+			// and puts the retry button back; posting the message alone shows an
+			// English errno above a spinner that never stops.
+			Progress.failed(error)
 			sleep(10_000)
 			return
 		}
@@ -104,7 +107,9 @@ class AssistantService : Service() {
 		if (!keepRunning) return
 
 		Logs.add("[app] the assistant stopped (exit $code)")
-		Progress.post(getString(R.string.failed, "exit $code"), -1)
+		// A restart is about to happen by itself, so this is not a failure state:
+		// it is the honest description of what the user is looking at.
+		Progress.post(getString(R.string.failed_restart), -1)
 		// A run that lasted a while ended of its own accord; one that dies at once
 		// is a fault, and restarting it hot would only fill the log.
 		sleep(if (System.currentTimeMillis() - started < 10_000) 20_000 else 2_000)

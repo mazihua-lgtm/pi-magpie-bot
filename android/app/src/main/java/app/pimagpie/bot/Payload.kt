@@ -19,11 +19,33 @@ import java.util.zip.GZIPInputStream
 object Payload {
 	const val ASSET = "bootstrap.payload"
 
-	fun installed(context: Context): Boolean = Paths.mark(context).exists()
+	/**
+	 * Whether the unpacked copy belongs to this APK. A bare "it exists" check is
+	 * not enough: filesDir survives an upgrade, so a new APK would otherwise keep
+	 * running the old node, magpie and app code forever, and an update would look
+	 * like it did nothing.
+	 */
+	fun installed(context: Context): Boolean {
+		val mark = Paths.mark(context)
+		if (!mark.exists()) return false
+		return runCatching { mark.readText().trim() }.getOrNull() == stamp(context)
+	}
+
+	/** Identifies the payload: this build's version code. */
+	private fun stamp(context: Context): String = runCatching {
+		context.packageManager.getPackageInfo(context.packageName, 0).versionCode.toString()
+	}.getOrDefault("unknown")
 
 	fun unpack(context: Context, say: (percent: Int) -> Unit) {
 		val files = context.filesDir
 		Paths.mark(context).delete()
+		// An upgrade unpacks over the previous copy. Left in place, files this
+		// payload no longer ships would survive and the two versions would be
+		// mixed - a new app against an old node, or the reverse. `data` is the
+		// user's own and is never touched here.
+		files.listFiles()
+			?.filter { it.name == "sys" || it.name == "native" || it.name == "tmp" }
+			?.forEach { it.deleteRecursively() }
 		val total = try {
 			context.assets.openFd(ASSET).use { it.length }
 		} catch (_: IOException) {
@@ -51,7 +73,9 @@ object Payload {
 			}
 		}
 
-		Paths.mark(context).writeText("${System.currentTimeMillis()}\n")
+		// Written last, and carrying this build's version: a half-unpacked folder
+		// is never mistaken for a finished one, and an upgrade is noticed.
+		Paths.mark(context).writeText("${stamp(context)}\n")
 	}
 
 	private fun write(files: File, entry: TarArchiveEntry, input: InputStream) {

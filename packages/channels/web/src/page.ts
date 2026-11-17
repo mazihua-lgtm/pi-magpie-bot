@@ -16,28 +16,47 @@ export const PAGE = `<!doctype html>
 <meta name="mobile-web-app-capable" content="yes">
 <title>我的助理</title>
 <style>
-  :root { color-scheme: light dark; }
-  body { margin: 0; font: 16px/1.6 system-ui, -apple-system, "PingFang SC", sans-serif; height: 100dvh; display: flex; flex-direction: column; }
-  header { padding: 12px 16px; padding-top: max(12px, env(safe-area-inset-top)); border-bottom: 1px solid #8884; font-weight: 600; }
+  /* One place for the brand blue and the surfaces. #1d63d8 is the same hue as
+     the app icon but dark enough that white text on it passes 4.5:1; #2f7cf6
+     does not (3.94:1). */
+  :root {
+    color-scheme: light dark;
+    --brand: #1d63d8;
+    --surface: #ffffff;
+    --surface-2: #f1f2f4;
+    --text: #1a1a1a;
+    --muted: #5f6368;
+    --border: #c4c7cc;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --surface: #121212; --surface-2: #26282b; --text: #f2f2f2; --muted: #b0b3b8; --border: #5c6066; }
+  }
+  body { margin: 0; font: 16px/1.6 system-ui, -apple-system, "PingFang SC", sans-serif; height: 100dvh; display: flex; flex-direction: column; background: var(--surface); color: var(--text); }
+  header { padding: 12px 16px; padding-top: max(12px, env(safe-area-inset-top)); border-bottom: 1px solid var(--border); font-weight: 600; }
   #log { flex: 1; overflow-y: auto; padding: 16px; display: flex; flex-direction: column; gap: 10px; }
-  .msg { max-width: 44rem; padding: 10px 14px; border-radius: 14px; white-space: pre-wrap; word-break: break-word; }
-  .me { align-self: flex-end; background: #2f7cf6; color: #fff; }
-  .bot { align-self: flex-start; background: #8881; }
-  .sys { align-self: center; font-size: 13px; opacity: .6; }
-  code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .92em; background: #8882; padding: 1px 4px; border-radius: 4px; }
+  .msg { max-width: 44rem; padding: 10px 14px; border-radius: 16px; white-space: pre-wrap; word-break: break-word; }
+  .me { align-self: flex-end; background: var(--brand); color: #fff; }
+  /* A filled bubble, not a 6% tint: on a white page the tint came out at 1.07:1
+     and the reply read as bare text with a rounded edge. */
+  .bot { align-self: flex-start; background: var(--surface-2); }
+  .bot.pending { color: var(--muted); font-style: italic; }
+  .msg.failed { border: 1px solid #c62828; }
+  .sys { align-self: center; font-size: 14px; color: var(--muted); }
+  code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .92em; background: var(--surface-2); padding: 1px 4px; border-radius: 6px; }
   a { color: inherit; }
-  form { display: flex; gap: 8px; padding: 12px 16px; padding-bottom: max(12px, env(safe-area-inset-bottom)); padding-left: max(16px, env(safe-area-inset-left)); padding-right: max(16px, env(safe-area-inset-right)); border-top: 1px solid #8884; }
-  textarea { flex: 1; resize: none; font: inherit; padding: 10px; border-radius: 12px; border: 1px solid #8886; background: transparent; color: inherit; }
+  form { display: flex; gap: 8px; padding: 12px 16px; padding-bottom: max(12px, env(safe-area-inset-bottom)); padding-left: max(16px, env(safe-area-inset-left)); padding-right: max(16px, env(safe-area-inset-right)); border-top: 1px solid var(--border); }
+  textarea { flex: 1; resize: none; font: inherit; padding: 10px; max-height: 30vh; border-radius: 12px; border: 1px solid var(--border); background: transparent; color: inherit; }
   .chips { align-self: flex-start; display: flex; flex-wrap: wrap; gap: 8px; }
-  .chip { padding: 8px 14px; border-radius: 999px; background: transparent; color: inherit; border: 1px solid #8886; }
-  button { font: inherit; padding: 0 18px; border-radius: 12px; border: 0; background: #2f7cf6; color: #fff; }
+  .chip { padding: 11px 16px; min-height: 44px; border-radius: 999px; background: transparent; color: inherit; border: 1px solid var(--border); }
+  button { font: inherit; padding: 0 18px; border-radius: 12px; border: 0; background: var(--brand); color: #fff; }
   button:disabled { opacity: .5; }
 </style>
 <header>我的助理</header>
-<div id="log"></div>
+<div id="log" role="log" aria-live="polite" aria-label="对话"></div>
 <form id="form">
-  <textarea id="text" rows="1" placeholder="说点什么，比如「十分钟后提醒我关火」"></textarea>
-  <button id="send">发送</button>
+  <textarea id="text" rows="1" aria-label="给助理发消息" enterkeyhint="send"
+    placeholder="说点什么，比如「十分钟后提醒我关火」"></textarea>
+  <button id="send" type="submit">发送</button>
 </form>
 <script>
   const log = document.getElementById('log');
@@ -75,12 +94,14 @@ export const PAGE = `<!doctype html>
     });
   }
 
+  /** Draws one message and gives it back, so a caller can undo or mark it. */
   function add(kind, body) {
     const div = document.createElement('div');
     div.className = 'msg ' + kind;
     render(div, body);
     log.appendChild(div);
     log.scrollTop = log.scrollHeight;
+    return div;
   }
 
   add('sys', '直接说话就行。我是跑在这台机器上的，记性存在本地。');
@@ -109,22 +130,70 @@ export const PAGE = `<!doctype html>
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').catch(() => {});
 
   // A phone user can put this on the home screen and then it opens full screen,
-  // with an icon, like an app. Said once: after that it is just noise.
+  // with an icon, like an app. Said once: after that it is just noise. Android's
+  // WebView also reports "not standalone", but it has no menu to add anything
+  // from, so inside our own app the hint is simply wrong.
+  const inApp = /\bwv\b/.test(navigator.userAgent) || /\bapp\.pimagpie\.bot\b/.test(navigator.userAgent);
   const standalone = window.matchMedia('(display-mode: standalone)').matches || navigator.standalone;
   try {
-    if (!standalone && !localStorage.getItem('hint')) {
+    if (!standalone && !inApp && !localStorage.getItem('hint')) {
       localStorage.setItem('hint', '1');
       const ios = /iPhone|iPad|iPod/.test(navigator.userAgent);
       add('sys', ios ? '想更像 App：点下面的分享按钮，选「添加到主屏幕」。' : '想更像 App：点右上角菜单，选「添加到主屏幕」。');
     }
   } catch (error) {}
 
+  // The server replays recent history on every (re)connect, so a reconnecting
+  // phone would draw the whole conversation again. Keep what is already on
+  // screen and skip anything seen before.
+  const seen = new Set();
+  const key = (who, text) => who + '\u0000' + text;
+
+  let offline = null;
   const events = new EventSource('/api/events');
+  events.onopen = () => {
+    if (offline) {
+      offline.remove();
+      offline = null;
+    }
+  };
   events.onmessage = (event) => {
     const data = JSON.parse(event.data);
-    add(data.role === 'me' ? 'me' : 'bot', data.text);
+    const who = data.role === 'me' ? 'me' : 'bot';
+    const k = key(who, data.text);
+    // The server replays recent history on every connect, so the same line can
+    // arrive again after a reconnect. Draw it once.
+    if (seen.has(k)) return;
+    seen.add(k);
+    think();
+    add(who, data.text);
   };
-  events.onerror = () => add('sys', '连接断了，正在重试…');
+  // One banner, not one line per failed retry: EventSource retries on its own
+  // and can fire this many times a minute on a flaky phone connection.
+  events.onerror = () => {
+    if (offline) return;
+    offline = document.createElement('div');
+    offline.className = 'sys';
+    offline.textContent = '连接断了，正在重试…';
+    log.appendChild(offline);
+  };
+
+  /** A placeholder while the model thinks, so silence is not mistaken for a loss. */
+  let pending = null;
+  function think() {
+    if (pending) {
+      pending.remove();
+      pending = null;
+    }
+  }
+  function thinking() {
+    think();
+    pending = document.createElement('div');
+    pending.className = 'bot pending';
+    pending.textContent = '正在想…';
+    log.appendChild(pending);
+    log.scrollTop = log.scrollHeight;
+  }
 
   async function submit(body) {
     if (chips) {
@@ -132,15 +201,24 @@ export const PAGE = `<!doctype html>
       chips = null;
     }
     try { localStorage.setItem('talked', '1'); } catch (error) {}
-    add('me', body);
+    const mine = add('me', body);
     send.disabled = true;
+    thinking();
     try {
       const reply = await fetch('/api/message', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ text: body }),
       });
-      if (!reply.ok) add('sys', '没发出去：' + reply.status);
+      if (!reply.ok) throw new Error('status ' + reply.status);
+      seen.add(key('me', body));
+    } catch (error) {
+      // The text must not disappear: put it back where the user can resend it,
+      // mark the bubble, and say what happened without an HTTP status code.
+      think();
+      if (mine) mine.classList.add('failed');
+      text.value = body;
+      add('sys', '没能发出去，检查一下网络再点发送。');
     } finally {
       send.disabled = false;
       text.focus();
@@ -157,6 +235,9 @@ export const PAGE = `<!doctype html>
   };
 
   text.addEventListener('keydown', (event) => {
+    // A Chinese input method uses Enter to accept a candidate. Without this
+    // check, confirming a word sends half of it.
+    if (event.isComposing || event.keyCode === 229) return;
     if (event.key === 'Enter' && !event.shiftKey) {
       event.preventDefault();
       form.requestSubmit();
