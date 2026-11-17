@@ -190,6 +190,21 @@ find "$sys/app/node_modules/.pnpm" -maxdepth 1 -type d \
 	\( -name '@esbuild+darwin-*' -o -name '@esbuild+win32-*' -o -name '@esbuild+linux-x64*' -o -name '@esbuild+linux-ia32*' \) \
 	-exec rm -rf {} +
 
+# Model SDKs the app never calls, and the chat-channel SDKs of a desktop
+# install. The Android app talks to magpie through the OpenAI-compatible API
+# only, so the anthropic, google and bedrock client libraries (loaded lazily by
+# pi-ai and never by us) are dead weight; the feishu and wecom SDKs belong to
+# channels that a phone does not run. openai stays: it is the one client the
+# magpie path imports. The channel code itself is kept and loaded on demand, so
+# a desktop checkout still works unchanged.
+find "$sys/app/node_modules/.pnpm" -maxdepth 1 -type d \
+	\( -name '@anthropic-ai+*' -o -name '@google+genai*' -o -name '@aws-sdk+client-bedrock*' -o -name '@larksuiteoapi*' -o -name '@wecom*' \) \
+	-exec rm -rf {} +
+
+# The desktop channels' tests import the SDKs just removed. The phone runs none
+# of it, and the source tree (where CI runs them) is untouched.
+rm -rf "$sys/app/packages/channels/feishu" "$sys/app/packages/channels/wecom"
+
 say "tarball"
 tar -C "$STAGE" -czf "$OUT" sys native
 ls -lh "$OUT"

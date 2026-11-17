@@ -10,9 +10,6 @@ import { homedir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { Bot } from '@pi-magpie-bot/brain';
 import { clearDataDirLock } from '@pi-magpie-bot/events';
-import { FeishuChannel } from '@pi-magpie-bot/channel-feishu';
-import { TelegramChannel } from '@pi-magpie-bot/channel-telegram';
-import { WecomChannel } from '@pi-magpie-bot/channel-wecom';
 import { serveSetupPage, type SetupPageOptions, WebChannel } from '@pi-magpie-bot/channel-web';
 import {
 	addProvider,
@@ -369,6 +366,10 @@ const owners = bot.owners;
 const shutdown: Array<() => Promise<void> | void> = [];
 
 if (telegramToken) {
+	// Loaded on demand: the Android payload ships without these channels' SDKs,
+	// so a static import would crash before the web chat could even open. A user
+	// who set the token has the packages; one who did not never loads them.
+	const { TelegramChannel } = await import('@pi-magpie-bot/channel-telegram');
 	const telegram = new TelegramChannel({
 		token: telegramToken,
 		owners,
@@ -388,6 +389,7 @@ if (telegramToken) {
 const feishuId = env.FEISHU_APP_ID?.trim();
 const feishuSecret = env.FEISHU_APP_SECRET?.trim();
 if (feishuId && feishuSecret) {
+	const { FeishuChannel } = await import('@pi-magpie-bot/channel-feishu');
 	const feishu = new FeishuChannel({
 		appId: feishuId,
 		appSecret: feishuSecret,
@@ -409,6 +411,7 @@ if (feishuId && feishuSecret) {
 const wecomId = env.WECOM_BOT_ID?.trim();
 const wecomSecret = env.WECOM_BOT_SECRET?.trim();
 if (wecomId && wecomSecret) {
+	const { WecomChannel } = await import('@pi-magpie-bot/channel-wecom');
 	const wecom = new WecomChannel({
 		botId: wecomId,
 		secret: wecomSecret,
