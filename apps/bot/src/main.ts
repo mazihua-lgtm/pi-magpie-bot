@@ -9,6 +9,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { Bot } from '@pi-magpie-bot/brain';
+import { clearDataDirLock } from '@pi-magpie-bot/events';
 import { FeishuChannel } from '@pi-magpie-bot/channel-feishu';
 import { TelegramChannel } from '@pi-magpie-bot/channel-telegram';
 import { WecomChannel } from '@pi-magpie-bot/channel-wecom';
@@ -318,12 +319,48 @@ if (reachable === 'retry') {
 	process.exit(1);
 }
 
-const bot = await Bot.open({
-	dataDir,
-	config,
-	modelId: env.MAGPIE_MODEL,
-	workspaceDir: env.WORKSPACE_DIR ? resolve(env.WORKSPACE_DIR) : undefined,
-});
+/** Whether a chat is already answering on our own web port. */
+async function serving(): Promise<boolean> {
+	if (env.WEB_PORT === '0') return true; // No web chat to ask; assume the holder is real.
+	try {
+		const response = await fetch(`http://127.0.0.1:${env.WEB_PORT ?? 8787}/healthz`, {
+			signal: AbortSignal.timeout(2_000),
+		});
+		return response.ok;
+	} catch {
+		return false;
+	}
+}
+
+async function openBot(): Promise<Bot> {
+	try {
+		return await Bot.open({
+			dataDir,
+			config,
+			modelId: env.MAGPIE_MODEL,
+			workspaceDir: env.WORKSPACE_DIR ? resolve(env.WORKSPACE_DIR) : undefined,
+		});
+	} catch (error) {
+		// A process can be alive and holding the directory while serving nobody -
+		// a hung run, a half-dead proot. Refusing forever would be worse than the
+		// mistake the lock exists to prevent, so check before giving up.
+		if (!/另一个助理|another assistant/.test((error as Error).message)) throw error;
+		if (await serving()) {
+			console.error('[bot] 已经有一个助理在跑了，而且正在应答。直接用它就行，不用再起一个。');
+			process.exit(0);
+		}
+		console.error('[bot] 数据目录被一个不再应答的进程占着，正在接管。');
+		clearDataDirLock(dataDir);
+		return await Bot.open({
+			dataDir,
+			config,
+			modelId: env.MAGPIE_MODEL,
+			workspaceDir: env.WORKSPACE_DIR ? resolve(env.WORKSPACE_DIR) : undefined,
+		});
+	}
+}
+
+const bot = await openBot();
 
 const telegramToken = env.TELEGRAM_BOT_TOKEN?.trim();
 const webDisabled = env.WEB_PORT === '0';
