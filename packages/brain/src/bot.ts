@@ -9,6 +9,7 @@ import type { ConversationId } from '@earendil-works/pi-durable';
 import { openNodeSqliteStorage } from '@earendil-works/pi-durable/storage/sqlite/node';
 import {
 	Approvals,
+	claimDataDir,
 	Inbox,
 	Outbox,
 	Owners,
@@ -16,6 +17,7 @@ import {
 	Settings,
 	Targets,
 	openHostDb,
+	type DataDirLock,
 	type HostDb,
 	type IncomingEvent,
 } from '@pi-magpie-bot/events';
@@ -108,13 +110,24 @@ export class Bot {
 	private readonly systemPrompt: string;
 	private timers: NodeJS.Timeout[] = [];
 	private closed = false;
+	/** Held while this process owns the data directory. */
+	private readonly lock: DataDirLock;
 	/** How long one run may take before it is abandoned and the loop moves on. */
 	private readonly runTimeoutMs = 5 * 60_000;
 
-	private constructor(harness: Harness, host: HostDb, modelId: string, systemPrompt: string, dataDir: string, now: () => number) {
+	private constructor(
+		harness: Harness,
+		host: HostDb,
+		modelId: string,
+		systemPrompt: string,
+		dataDir: string,
+		now: () => number,
+		lock: DataDirLock,
+	) {
 		this.harness = harness;
 		this.modelId = modelId;
 		this.systemPrompt = systemPrompt;
+		this.lock = lock;
 		this.host = host;
 		this.inbox = new Inbox(host);
 		this.outbox = new Outbox(host);
@@ -136,6 +149,11 @@ export class Bot {
 			throw new Error(`the gateway has no model "${modelId}"`);
 		}
 
+		// Before touching anything: recovery below assumes whatever it finds was
+		// left by a crash. With a second process running it would steal that one's
+		// in-flight message, approval card and running event instead.
+		const lock = claimDataDir(options.dataDir);
+
 		const host = openHostDb(join(options.dataDir, 'host.sqlite'));
 		const storage = await openNodeSqliteStorage(join(options.dataDir, 'agent.sqlite'));
 
@@ -155,17 +173,24 @@ export class Bot {
 			);
 		}
 
-		const harness = await Harness.open(
-			storage,
-			{
-				models,
-				registry,
-				now,
-				...(workspaceDir ? { env: () => new NodeExecutionEnv({ cwd: workspaceDir }) } : {}),
-			},
-			BACKGROUND_CONTEXT,
-		);
-		const bot = new Bot(harness, host, modelId, options.systemPrompt ?? DEFAULT_SYSTEM_PROMPT, options.dataDir, now);
+		let harness: Harness;
+		try {
+			harness = await Harness.open(
+				storage,
+				{
+					models,
+					registry,
+					now,
+					...(workspaceDir ? { env: () => new NodeExecutionEnv({ cwd: workspaceDir }) } : {}),
+				},
+				BACKGROUND_CONTEXT,
+			);
+		} catch (error) {
+			// Nothing will run, so do not leave a lock blocking the next attempt.
+			lock.release();
+			throw error;
+		}
+		const bot = new Bot(harness, host, modelId, options.systemPrompt ?? DEFAULT_SYSTEM_PROMPT, options.dataDir, now, lock);
 		bot.recover();
 		return bot;
 	}
@@ -468,8 +493,13 @@ export class Bot {
 		if (this.closed) return;
 		this.closed = true;
 		for (const timer of this.timers.splice(0)) clearInterval(timer);
-		await this.harness.close(BACKGROUND_CONTEXT);
-		this.host.close();
+		try {
+			await this.harness.close(BACKGROUND_CONTEXT);
+		} finally {
+			this.host.close();
+			// Released last: until the database is closed this process still owns it.
+			this.lock.release();
+		}
 	}
 }
 

@@ -79,6 +79,17 @@ class AssistantService : Service() {
 
 	private fun runOnce() {
 		val started = System.currentTimeMillis()
+		// An assistant from a previous start may still be answering (proot survived
+		// a force-stop, or this service was restarted while it ran). Starting a
+		// second one lands on a busy port, exits, and loops every twenty seconds;
+		// the one already running is what the user wants anyway.
+		if (answering()) {
+			Logs.add("[app] an assistant is already answering on ${Runner.BASE}; leaving it alone")
+			Progress.post(getString(R.string.running), -1)
+			foreground(getString(R.string.running))
+			sleep(30_000)
+			return
+		}
 		val process = try {
 			ProcessBuilder(Runner.command(this))
 				.directory(Paths.root(this))
@@ -216,6 +227,18 @@ class AssistantService : Service() {
 			lines.add("nameserver 8.8.8.8")
 		}
 		Paths.resolv(this).writeText(lines.joinToString("\n", postfix = "\n"))
+	}
+
+	/** Whether something is already serving the chat on the loopback port. */
+	private fun answering(): Boolean = try {
+		val connection = URL("${Runner.BASE}/healthz").openConnection() as HttpURLConnection
+		connection.connectTimeout = 1_000
+		connection.readTimeout = 1_000
+		val ok = connection.responseCode == 200
+		connection.disconnect()
+		ok
+	} catch (_: Exception) {
+		false
 	}
 
 	private fun sleep(ms: Long) {

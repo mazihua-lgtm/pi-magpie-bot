@@ -47,6 +47,17 @@ function loadDotEnv(path: string): void {
 	}
 }
 
+// Registered before anything is awaited: the startup below awaits at the top
+// level, and a rejection there is not caught by anything else in this file.
+// Without these two, a port already in use or a failed download kills the
+// process with a stack trace and the restart loop never says why.
+process.on('unhandledRejection', (error) => {
+	console.error('[bot] unhandled rejection', error);
+});
+process.on('uncaughtException', (error) => {
+	console.error('[bot] uncaught exception', error);
+});
+
 loadDotEnv(join(process.cwd(), '.env'));
 
 const env = process.env;
@@ -396,7 +407,24 @@ if (!webDisabled) {
 		},
 	});
 	bot.register(web);
-	const { url } = await web.start();
+	let url: string;
+	try {
+		({ url } = await web.start());
+	} catch (error) {
+		const code = (error as NodeJS.ErrnoException).code;
+		if (code === 'EADDRINUSE') {
+			// The common cause is our own previous run not having died, and that
+			// process is still answering people. Say so instead of restarting
+			// forever with a stack trace nobody sees on a phone.
+			console.error(
+				`[bot] 端口 ${env.WEB_PORT ?? 8787} 已经被占用了：很可能已经有一个助理在跑。先把它关掉，或者换一个 WEB_PORT。`,
+			);
+			console.error(`[bot] port ${env.WEB_PORT ?? 8787} is already in use by another process; stop it or set WEB_PORT`);
+			await bot.close();
+			process.exit(1);
+		}
+		throw error;
+	}
 	shutdown.push(() => web.stop());
 	console.log(`[bot] web chat at ${url}${env.WEB_PASSWORD ? ' (password required)' : ''}`);
 }
@@ -423,4 +451,3 @@ const close = async (signal: string) => {
 
 process.on('SIGINT', () => void close('SIGINT'));
 process.on('SIGTERM', () => void close('SIGTERM'));
-process.on('unhandledRejection', (error) => console.error('[bot] unhandled rejection', error));
