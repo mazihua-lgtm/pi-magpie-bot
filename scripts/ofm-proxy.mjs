@@ -79,7 +79,7 @@ export function createProxy(options) {
 
 	readKey();
 
-	const server = createServer(async (request, response) => {
+	const handle = async (request, response) => {
 		const url = request.url ?? '';
 		if (url.startsWith('/health')) {
 			response.writeHead(200, { 'content-type': 'application/json' }).end('{"ok":true}');
@@ -111,11 +111,12 @@ export function createProxy(options) {
 			return;
 		}
 
-		// Try each lane in order. A 429 or a server error moves to the next; a
-		// successful response is streamed straight back, chunks and all.
-		const order = [...lanes];
+		// Try each lane in order. A quota or server error moves to the next lane; a
+		// client error is passed straight back, since trying it elsewhere only
+		// burns the other lanes' quota on a request that cannot succeed.
+		let started = false;
 		let last;
-		for (const lane of order) {
+		for (const lane of lanes.length > 0 ? [...lanes] : []) {
 			try {
 				const forwarded = await fetch(`${upstream}/v1/chat/completions`, {
 					method: 'POST',
@@ -126,6 +127,12 @@ export function createProxy(options) {
 					body: JSON.stringify({ ...body, model: lane }),
 					signal: AbortSignal.timeout(options.timeoutMs ?? 120_000),
 				});
+				// 4xx other than a rate limit is the request's own fault: hand it back.
+				if (forwarded.status >= 400 && forwarded.status < 500 && forwarded.status !== 429) {
+					const text = await forwarded.text().catch(() => '{"error":"upstream refused"}');
+					response.writeHead(forwarded.status, { 'content-type': 'application/json' }).end(text);
+					return;
+				}
 				if (forwarded.status >= 400) {
 					last = forwarded.status;
 					continue;
@@ -134,16 +141,48 @@ export function createProxy(options) {
 				lanes = [lane, ...lanes.filter((id) => id !== lane)];
 				const type = forwarded.headers.get('content-type') ?? 'application/json';
 				response.writeHead(forwarded.status, { 'content-type': type });
+				started = true;
 				if (forwarded.body) for await (const chunk of forwarded.body) response.write(chunk);
 				response.end();
 				return;
 			} catch {
 				last = 502;
+				// Headers already went out: this response cannot be restarted, and
+				// trying another lane would throw ERR_HTTP_HEADERS_SENT and crash the
+				// proxy. End it instead and let the caller retry a fresh request.
+				if (started) {
+					response.end();
+					return;
+				}
 			}
 		}
-		response.writeHead(429, { 'content-type': 'application/json' }).end(
-			JSON.stringify({ error: { message: `no free lane available (last ${last})`, type: 'rate_limit_error' } }),
+		if (response.headersSent) {
+			response.end();
+			return;
+		}
+		// 503, not 429: a gateway that sees 429 locks the whole provider, which is
+		// exactly what this proxy exists to prevent.
+		response.writeHead(503, { 'content-type': 'application/json' }).end(
+			JSON.stringify({ error: { message: `no free lane available (last ${last})`, type: 'server_error' } }),
 		);
+	};
+
+	// Nothing a single request does may take the whole proxy down: if this
+	// process exits, every message fails until the app restarts.
+	const server = createServer((request, response) => {
+		handle(request, response).catch((error) => {
+			try {
+				if (!response.headersSent) {
+					response.writeHead(500, { 'content-type': 'application/json' }).end(
+						JSON.stringify({ error: { message: `proxy error: ${error?.message ?? error}`, type: 'server_error' } }),
+					);
+				} else {
+					response.end();
+				}
+			} catch {
+				// The socket is already gone; nothing left to say.
+			}
+		});
 	});
 
 	return {

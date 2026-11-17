@@ -37,6 +37,10 @@ interface MagpieModelList {
 async function request(config: GatewayConfig, path: string, init?: RequestInit): Promise<Response> {
 	const response = await fetch(`${config.baseUrl}${path}`, {
 		...init,
+		// Without this, a gateway that accepts the connection and never answers
+		// hangs startup forever: the deadline in `ensureGateway` bounds the sleeps
+		// between calls, never the call itself.
+		signal: init?.signal ?? AbortSignal.timeout(15_000),
 		headers: {
 			Authorization: `Bearer ${config.apiKey}`,
 			'Content-Type': 'application/json',

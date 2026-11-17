@@ -82,6 +82,11 @@ export function openHostDb(path: string): HostDb {
 	if (path !== ':memory:') mkdirSync(dirname(path), { recursive: true });
 	const db = new DatabaseSync(path);
 	db.exec('PRAGMA journal_mode = WAL');
+	// NORMAL, not the default FULL: one message writes seven separate commits,
+	// and each FULL commit fsyncs. Under WAL the cost of NORMAL is losing the
+	// last few commits in a power cut, never a corrupt file - and pi-durable,
+	// which shares this process, already runs NORMAL.
+	db.exec('PRAGMA synchronous = NORMAL');
 	db.exec('PRAGMA busy_timeout = 5000');
 	db.exec(SCHEMA);
 	return { db, close: () => db.close() };

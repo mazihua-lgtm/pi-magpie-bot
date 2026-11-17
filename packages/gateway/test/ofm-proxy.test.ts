@@ -73,4 +73,66 @@ describe('the free-model proxy', () => {
 		expect(body.data.map((model) => model.id)).toEqual(['free']);
 		await proxy.close();
 	});
+
+	it('survives a lane that dies mid-stream instead of taking the process down', async () => {
+		// A lane that sends headers and one chunk, then drops the connection. Before
+		// the fix the retry threw ERR_HTTP_HEADERS_SENT and exited the proxy.
+		const upstream = createServer(async (request, response) => {
+			if (request.url === '/v1/models') {
+				response.writeHead(200).end(JSON.stringify({ data: [] }));
+				return;
+			}
+			response.writeHead(200, { 'content-type': 'text/event-stream' });
+			response.write('data: {"partial":true}\n\n');
+			setTimeout(() => response.destroy(), 40);
+		});
+		await new Promise<void>((resolve) => upstream.listen(0, '127.0.0.1', resolve));
+		servers.push(upstream);
+		const port = (upstream.address() as { port: number }).port;
+
+		const proxy = createProxy({ upstream: `http://127.0.0.1:${port}`, port: 0, lanes: ['kilo-auto/free', 'openrouter/free'] });
+		await proxy.listen(0);
+		const address = proxy.server.address() as { port: number };
+
+		const first = await fetch(`http://127.0.0.1:${address.port}/v1/chat/completions`, {
+			method: 'POST',
+			headers: { 'content-type': 'application/json' },
+			body: JSON.stringify({ model: 'free', messages: [{ role: 'user', content: 'hi' }] }),
+		}).catch(() => undefined);
+		await first?.text().catch(() => '');
+
+		// The point: the proxy is still serving.
+		const health = await fetch(`http://127.0.0.1:${address.port}/health`);
+		expect(health.status).toBe(200);
+		await proxy.close();
+	});
+
+	it('answers 503, never 429, when every lane is down', async () => {
+		// 429 makes a gateway lock the whole provider, which is what this proxy exists
+		// to prevent; the error must not look like a quota problem.
+		const port = await upstreamWith(emptyCatalogue, () => [429, '{"error":"quota"}']);
+		const proxy = createProxy({ upstream: `http://127.0.0.1:${port}`, port: 0, lanes: ['kilo-auto/free'] });
+		await proxy.listen(0);
+		const address = proxy.server.address() as { port: number };
+		const [status] = await call(address.port);
+		expect(status).toBe(503);
+		await proxy.close();
+	});
+
+	it('passes a client error straight back instead of burning other lanes', async () => {
+		const seen: string[] = [];
+		const port = await upstreamWith(emptyCatalogue, (model) => {
+			seen.push(model);
+			return [400, '{"error":"context too long"}'];
+		});
+		const proxy = createProxy({ upstream: `http://127.0.0.1:${port}`, port: 0, lanes: ['kilo-auto/free', 'openrouter/free'] });
+		await proxy.listen(0);
+		const address = proxy.server.address() as { port: number };
+		const [status, body] = await call(address.port);
+		expect(status).toBe(400);
+		expect(body).toContain('context too long');
+		// Only the first lane was tried: trying more would waste their quota.
+		expect(seen).toEqual(['kilo-auto/free']);
+		await proxy.close();
+	});
 });

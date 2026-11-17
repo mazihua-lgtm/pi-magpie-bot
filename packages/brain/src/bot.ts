@@ -108,6 +108,8 @@ export class Bot {
 	private readonly systemPrompt: string;
 	private timers: NodeJS.Timeout[] = [];
 	private closed = false;
+	/** How long one run may take before it is abandoned and the loop moves on. */
+	private readonly runTimeoutMs = 5 * 60_000;
 
 	private constructor(harness: Harness, host: HostDb, modelId: string, systemPrompt: string, dataDir: string, now: () => number) {
 		this.harness = harness;
@@ -301,29 +303,43 @@ export class Bot {
 	private async answer(conversationId: string, text: string): Promise<void> {
 		const conversation = await this.ensureConversation(conversationId);
 		const submission = await conversation.submit({ type: 'input', content: text }, BACKGROUND_CONTEXT);
-		const settled = await submission.wait(BACKGROUND_CONTEXT);
+		// A run that never settles would hold the one work loop forever: the busy
+		// flag in `start()` would skip every later tick, so no message and no
+		// reminder would ever be handled again - silently, with no error anywhere.
+		const settled = await Promise.race([
+			submission.wait(BACKGROUND_CONTEXT),
+			new Promise<never>((_, reject) =>
+				setTimeout(() => reject(new Error(`run took longer than ${this.runTimeoutMs / 60_000} minutes`)), this.runTimeoutMs).unref?.(),
+			),
+		]).catch(async (error) => {
+			console.error(`[bot] giving up on a run: ${(error as Error).message}`);
+			await submission.abort(BACKGROUND_CONTEXT).catch(() => {});
+			return { status: 'unanswered' as const, reason: 'timed_out' };
+		});
 
 		const target = this.targets.get(conversationId);
 		if (!target) return;
 
 		if (settled.status !== 'done') {
 			const reason = 'reason' in settled ? String(settled.reason) : 'failed';
-			// The user is told, briefly; whoever runs the bot gets the reason written down.
-			console.error(`[bot] no answer: ${reason}`);
 			// A model error is nearly always the free pool being used up, and saying
-			// so beats "try again" to someone who cannot know that.
+			// so beats "try again" to someone who cannot know that. Anything else is
+			// left as one plain sentence: a raw status word means nothing to a user.
 			const why =
 				reason === 'model_error'
 					? bilingual(text, '（免费池可能到量了，等一会儿再试；用自己模型的检查一下 magpie）', ' (the free pool may be used up: try again later, or check magpie if you use your own model)')
-					: '';
+					: reason === 'timed_out'
+						? bilingual(text, '（等太久了，我先放下这一条）', ' (it took too long, so I put that one down)')
+						: '';
+			console.error(`[bot] no answer for ${conversationId}: ${reason}`);
 			this.outbox.enqueue({
 				conversation: conversationId,
 				channel: target.channel,
 				target: target.target,
 				text: bilingual(
 					text,
-					`这次没能回答（${reason}）。可以再说一次，或者稍后让我重试。${why}`,
-					`That one did not come back (${reason}). Send it again, or ask me to retry later.${why}`,
+					`这次没能回答。可以再说一次，或者稍后让我重试。${why}`,
+					`That one did not come back. Send it again, or ask me to retry later.${why}`,
 				),
 			});
 			return;

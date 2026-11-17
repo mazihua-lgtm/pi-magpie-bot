@@ -120,6 +120,34 @@ describe('schedules', () => {
 		expect(schedules.due(late)).toEqual([]);
 		db.close();
 	});
+
+	it('drops a bad repeat of zero instead of spinning forever', () => {
+		const db = host();
+		const schedules = new Schedules(db);
+		const at = Date.now() - 1_000;
+		const id = schedules.add({ conversation: 'c1', channel: 'web', target: 't', text: 'tick', at, everyMs: 0 });
+
+		const due = schedules.due(Date.now());
+		expect(due.map((row) => row.id)).toEqual([id]);
+		// Before the guard this call never returned: `next += 0` loops forever and
+		// takes the whole event loop with it.
+		schedules.fired(due[0]!, Date.now());
+		expect(schedules.list()).toEqual([]);
+		db.close();
+	});
+
+	it('drops a negative repeat too', () => {
+		const db = host();
+		const schedules = new Schedules(db);
+		const at = Date.now() - 1_000;
+		const id = schedules.add({ conversation: 'c1', channel: 'web', target: 't', text: 'tick', at, everyMs: -60_000 });
+
+		const due = schedules.due(Date.now());
+		expect(due.map((row) => row.id)).toEqual([id]);
+		schedules.fired(due[0]!, Date.now());
+		expect(schedules.list()).toEqual([]);
+		db.close();
+	});
 });
 
 describe('approvals', () => {

@@ -107,7 +107,7 @@ async function ensureProxy(options: OfmRouteOptions, upstreamPort: number, node:
 	// Not detached: the proxy is a child of this process, so a restart or a
 	// force-stop takes it with it. A detached one can survive holding the port
 	// with stale code and stale lanes.
-	const child = spawn(node, [script], {
+	spawn(node, [script], {
 		stdio: 'ignore',
 		env: {
 			...cleanEnv(),
@@ -117,7 +117,17 @@ async function ensureProxy(options: OfmRouteOptions, upstreamPort: number, node:
 			NO_PROXY: '*',
 			no_proxy: '*',
 		},
-	});
+	})
+		// Without this an ENOENT/EACCES on spawn is an uncaught 'error' event that
+		// takes the whole bot down before it can say why.
+		.on('error', (error) => (options.log ?? (() => {}))(`the free-model proxy could not start: ${error.message}`))
+		.on('exit', (code, signal) => {
+			if (code === 0 || signal === 'SIGTERM') return;
+			// The proxy dying means every free request fails until someone
+			// restarts it. Say so where a person can see it.
+			(options.log ?? (() => {}))(`the free-model proxy exited (${signal ?? code}); free models are down until restart`);
+		});
+
 	for (let waited = 0; waited < 15_000; waited += 500) {
 		await sleep(500);
 		if (await proxyIsOurs(base)) return base;
@@ -163,10 +173,15 @@ export async function ensureOfmRoute(options: OfmRouteOptions): Promise<boolean>
 		};
 		// A child of this process, not detached: a restart or force-stop takes
 		// it with it, so an old instance never holds the port with stale state.
-		const child = spawn(node, [cli, '--port', String(port), '--data-dir', options.dataDir], {
+		spawn(node, [cli, '--port', String(port), '--data-dir', options.dataDir], {
 			stdio: 'ignore',
 			env,
-		});
+		})
+			.on('error', (error) => log(`the free-model service could not start: ${error.message}`))
+			.on('exit', (code, signal) => {
+				if (code === 0 || signal === 'SIGTERM') return;
+				log(`the free-model service exited (${signal ?? code}); free models are down until restart`);
+			});
 		log('starting the free-model service');
 
 		let up = false;

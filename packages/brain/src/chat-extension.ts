@@ -65,6 +65,15 @@ export function createChatExtension(options: ChatExtensionOptions): Extension {
 					const at = args.at ? Date.parse(args.at) : args.inMinutes != null ? now() + args.inMinutes * 60_000 : undefined;
 					if (at === undefined || Number.isNaN(at)) return reply('give either inMinutes or an ISO time in at', true);
 					if (at <= now()) return reply('that time has already passed', true);
+					// A repeat of zero minutes is a reminder that fires forever in one
+					// go: the scheduler would spin on `next += 0` and freeze the whole
+					// process. Reject it here rather than trust the model's arithmetic.
+					if (args.everyMinutes != null) {
+						if (!Number.isFinite(args.everyMinutes) || args.everyMinutes < 1) {
+							return reply('everyMinutes must be at least 1 (omit it for a one-off)', true);
+						}
+						if (args.everyMinutes > 525_600) return reply('everyMinutes is too large: at most one year', true);
+					}
 
 					const id = options.schedules.add({
 						conversation: chat.conversation,

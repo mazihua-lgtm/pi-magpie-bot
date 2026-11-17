@@ -64,7 +64,9 @@ const remoteGateway = env.MAGPIE_START === '0';
 const magpieCli = remoteGateway ? 'docker compose exec magpie /magpie' : 'magpie';
 /** Which model the user asked for, and whether that means the free pool. */
 const wanted = env.MAGPIE_MODEL?.trim();
-const wantsFree = wanted === `group/${FREE_GROUP}`;
+/** Every name the free route answers to: the old group, and the proxy's model. */
+const FREE_IDS = [`group/${FREE_GROUP}`, 'group/ofm-free', 'ofm/free'];
+const wantsFree = wanted !== undefined && FREE_IDS.includes(wanted);
 
 /**
  * The local free-model service. The Android payload bundles a slimmed copy at
@@ -171,15 +173,16 @@ async function models(): Promise<Look> {
 		// minutes; check first whether a provider is already configured, or a
 		// phone that has a working model still waits three minutes on every boot.
 		let binary: string | undefined;
-		if (start && (wantsFree || !wanted)) {
+		if (start) {
 			binary = await magpieBinary();
 			if (binary && ofmSource) {
-				// Always run this, even with a provider already registered: the
-				// local service and its proxy are processes, not just config, and
-				// a reboot leaves the config but not the running processes. The
-				// function is idempotent - it starts only what is down.
+				// Unconditional: the local service and its proxy are processes, not
+				// just config, and a reboot leaves the config but not the running
+				// processes. It is idempotent - it starts only what is down - and a
+				// user who picked their own model still wants the free one available
+				// rather than a dead provider in the list.
 				await ensureOfmRoute({ binary, node: process.execPath, sourceDir: ofmSource, dataDir: ofmDataDir, log });
-			} else {
+			} else if (wantsFree || !wanted) {
 				// The older plugin route, for a machine with no bundled service.
 				// Its sign-in is slow, so a machine that already has a model skips it.
 				const configured = wanted ? undefined : binary ? await hasConfiguredModel(binary) : undefined;
@@ -203,11 +206,20 @@ async function startupModels(): Promise<Look> {
 	if (reachable === 'retry') return 'retry';
 	let ids = reachable.ids;
 
+	// The free route answers to more than one name across versions: an old
+	// `.env` says group/free, the bundled proxy registers ofm/free. Treat them
+	// as the same wish, or a stale default leaves a working model unused and
+	// drops the user on the "no model" page.
+	const askedFree = wanted !== undefined && FREE_IDS.includes(wanted);
+	const freeHere = () => FREE_IDS.find((id) => ids.includes(id));
+	const resolved = () => (askedFree ? freeHere() : wanted);
+
 	// A gateway someone else started (Homebrew, a desktop app) has no routing
 	// groups either. Same two commands, run here; a gateway already filled with
 	// the user's own models is left alone.
-	const missesFree = wantsFree ? !ids.includes(wanted) : ids.length === 0;
-	if (missesFree && env.MAGPIE_START !== '0') {
+	const first = resolved();
+	const missesFree = first === undefined ? ids.length === 0 : !ids.includes(first);
+	if (missesFree && env.MAGPIE_START !== '0' && !ofmSource) {
 		const tool = reachable.binary ?? findMagpieBinary(env, [join(ourBinDir, 'magpie')]);
 		if (tool) {
 			await ensureFreeRoute({ binary: tool, log });
@@ -217,8 +229,12 @@ async function startupModels(): Promise<Look> {
 
 	// No model is a first-run state, not a crash: say what is missing, and keep a
 	// page up saying it, because whoever started this from a compose file has no
-	// terminal to read.
-	const modelOk = wanted ? ids.includes(wanted) : ids.length > 0;
+	// terminal to read. Someone who asked for the free model and has none is not
+	// quietly handed a different one.
+	const chosen = resolved();
+	// Wanted a free model and there is none: not OK, even if paid models exist —
+	// silently answering on a paid model is a bill the user did not ask for.
+	const modelOk = askedFree ? chosen !== undefined : chosen !== undefined ? ids.includes(chosen) : ids.length > 0;
 	if (modelOk) return { ids, binary: reachable.binary };
 
 	// The anonymous pool signs itself up, so getting nothing back means the

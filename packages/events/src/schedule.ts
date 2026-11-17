@@ -58,13 +58,21 @@ export class Schedules {
 	 * Call it only after the event it produces is durably in the inbox.
 	 */
 	fired(row: ScheduleRow, now: number = Date.now()): void {
-		if (row.every_ms == null) {
+		// A repeat of zero or less would make the catch-up loop below spin forever
+		// and freeze the whole process. Such a row can only come from a bad write,
+		// so it is dropped rather than trusted.
+		if (row.every_ms == null || !(row.every_ms > 0)) {
 			this.host.db.prepare(`DELETE FROM schedules WHERE id = ?`).run(row.id);
 			return;
 		}
 		let next = row.next_run_at + row.every_ms;
-		// A process that was down for several periods fires once, on time, not a burst.
-		while (next <= now) next += row.every_ms;
+		// A process that was down for several periods fires once, on time, not a
+		// burst. every_ms is known positive here, so this always terminates; the
+		// step count is computed rather than looped to keep a long outage cheap.
+		if (next <= now) {
+			const missed = Math.ceil((now - next) / row.every_ms);
+			next += missed * row.every_ms;
+		}
 		this.host.db.prepare(`UPDATE schedules SET next_run_at = ? WHERE id = ?`).run(next, row.id);
 	}
 
