@@ -31,10 +31,19 @@ object Payload {
 		return runCatching { mark.readText().trim() }.getOrNull() == stamp(context)
 	}
 
-	/** Identifies the payload: this build's version code. */
-	private fun stamp(context: Context): String = runCatching {
-		context.packageManager.getPackageInfo(context.packageName, 0).versionCode.toString()
-	}.getOrDefault("unknown")
+	/**
+	 * Identifies the payload: the version code plus the asset's own size. The
+	 * version alone is not enough - a build can ship new payload contents
+	 * without anyone remembering to bump it, and then the phone keeps running
+	 * the old code while the APK looks updated.
+	 */
+	private fun stamp(context: Context): String {
+		val version = runCatching {
+			context.packageManager.getPackageInfo(context.packageName, 0).versionCode.toString()
+		}.getOrDefault("unknown")
+		val size = runCatching { context.assets.openFd(ASSET).use { it.length } }.getOrDefault(0L)
+		return "$version:$size"
+	}
 
 	fun unpack(context: Context, say: (percent: Int) -> Unit) {
 		val files = context.filesDir

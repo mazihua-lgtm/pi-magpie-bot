@@ -104,7 +104,10 @@ export const PAGE = `<!doctype html>
     return div;
   }
 
-  add('sys', '直接说话就行。我是跑在这台机器上的，记性存在本地。');
+  // The same page runs in the app on a phone and in a browser on a computer;
+  // "this machine" reads like a manual in neither place.
+  const here = /\bwv\b/.test(navigator.userAgent) ? '这台手机' : '这台电脑';
+  add('sys', '直接说话就行。我是跑在' + here + '上的，记性存在本地。');
 
   // A first visit gets things to try, so nobody faces an empty box. They
   // go away for good after the first message, from here or from the box.
