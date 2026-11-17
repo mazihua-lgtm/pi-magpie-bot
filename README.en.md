@@ -89,7 +89,7 @@ pnpm start            # start it
 ```
 
 The first start is the setup: with no magpie on the machine it downloads the official release
-(checksum compared before it is kept), installs the free-model plugin, signs in to the anonymous
+(the checksum is compared when the release publishes SHA256SUMS), installs the free-model plugin, signs in to the anonymous
 pool, creates the `free` routing group, and only then connects. `./install.sh` does the same and
 also writes your `.env`. Then open <http://127.0.0.1:8787>.
 
@@ -123,7 +123,7 @@ own model.
 3. `pnpm start`, then message your bot.
 
 **The first account that talks to it becomes the owner**; anyone else is refused. To let more
-people in, add their ids to `ALLOWED_USERS` in `.env`, comma separated.
+people in, add their ids to `ALLOWED_USERS` in `.env`, comma separated. Setting it disables first-come ownership: only the list may talk, so put yourself in it.
 
 ### Feishu / Lark
 
@@ -238,7 +238,7 @@ To run magpie in its own container (for example several bots sharing one gateway
 | `FEISHU_DOMAIN` | `feishu` | `lark` for international Lark |
 | `WECOM_BOT_ID` / `WECOM_BOT_SECRET` | empty | set both and WeCom is connected |
 | `WORKSPACE_DIR` | empty | only with it can the bot read files and run commands (each one approved) |
-| `ALLOWED_USERS` | empty | who else may talk to it, besides the owner |
+| `ALLOWED_USERS` | empty | the complete list of who may talk. **Setting it disables first-come ownership**: nobody outside the list is admitted, yourself included, and the list is shared across channels |
 
 ## How it is built
 

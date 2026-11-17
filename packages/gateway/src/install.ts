@@ -74,15 +74,22 @@ export async function installMagpie(options: InstallMagpieOptions): Promise<stri
 	if (!response.ok) throw new Error(`magpie release ${asset} failed: ${response.status}`);
 	const bytes = Buffer.from(await response.arrayBuffer());
 
-	const sums = await get(`${releases}/SHA256SUMS`).catch(() => undefined);
-	if (sums?.ok) {
-		const expected = checksumFor(await sums.text(), asset);
-		const actual = createHash('sha256').update(bytes).digest('hex');
-		if (!expected) throw new Error(`the release does not list a checksum for ${asset}; not installing it`);
-		if (expected !== actual) throw new Error(`checksum mismatch for ${asset}; not installing it`);
-		log('checksum ok');
+	const sumsResponse = await get(`${releases}/SHA256SUMS`).catch((error: Error) => error);
+	if (sumsResponse instanceof Response) {
+		if (!sumsResponse.ok) {
+			// Only a release that really publishes no list may skip the check. A
+			// network error must not: it would run a binary nobody has verified.
+			if (sumsResponse.status === 404) log(`no SHA256SUMS published for ${asset}; installing without a checksum`);
+			else throw new Error(`SHA256SUMS could not be fetched (${sumsResponse.status}); not installing without it`);
+		} else {
+			const expected = checksumFor(await sumsResponse.text(), asset);
+			const actual = createHash('sha256').update(bytes).digest('hex');
+			if (!expected) throw new Error(`the release does not list a checksum for ${asset}; not installing it`);
+			if (expected !== actual) throw new Error(`checksum mismatch for ${asset}; not installing it`);
+			log('checksum ok');
+		}
 	} else {
-		log(`no SHA256SUMS published for ${asset}; installing without a checksum`);
+		throw new Error(`SHA256SUMS could not be fetched (${sumsResponse.message}); not installing without it`);
 	}
 
 	await mkdir(options.dir, { recursive: true });
