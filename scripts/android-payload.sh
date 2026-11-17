@@ -22,6 +22,9 @@ OUT=$ROOT/android/app/src/main/assets/bootstrap.payload
 NODE_VERSION=${NODE_VERSION:-v24.22.3}
 UBUNTU=${UBUNTU:-ubuntu-base-24.04.3-base-arm64.tar.gz}
 TERMUX=${TERMUX:-https://packages.termux.dev/apt/termux-main}
+# Pinned to a commit, never a branch: the free models are a third party and a
+# moving head could change what the app runs without this repository changing.
+OFM_COMMIT=${OFM_COMMIT:-17c072e0631565d68053b5c03372ea445fd84c8e}
 
 say() { printf '\n== %s\n' "$*"; }
 
@@ -66,6 +69,9 @@ fetch_release yetone/magpie magpie-cli-linux-arm64 magpie
 # Mozilla's roots, as curl serves them: the one file in the root that makes
 # HTTPS mean anything to a program that trusts the system store.
 fetch "https://curl.se/ca/cacert.pem" "cacert.pem"
+# The free-model service: an OpenAI-compatible local gateway with several free
+# lanes. The tarball is pinned to a commit so a build is reproducible.
+fetch "https://codeload.github.com/Ebony-Vinyl/dsh-our-free-model/tar.gz/$OFM_COMMIT" "ofm.tgz"
 fetch "$TERMUX/pool/main/p/proot/proot_5.1.107.102_aarch64.deb" "proot.deb"
 fetch "$TERMUX/pool/main/libt/libtalloc/libtalloc_2.5.0_aarch64.deb" "libtalloc.deb"
 fetch "$TERMUX/pool/main/liba/libandroid-shmem/libandroid-shmem_0.7_aarch64.deb" "libandroid-shmem.deb"
@@ -109,6 +115,21 @@ mkdir -p "$sys/opt/magpie"
 cp "$WORK/magpie" "$sys/opt/magpie/magpie"
 chmod 755 "$sys/opt/magpie/magpie"
 
+say "the free-model service, slimmed to what actually serves a request"
+# The upstream repository is 137M unpacked, but 96M of that is a bundled magpie
+# engine (we ship our own), Windows-only engine parts, docs and images. Strip
+# those and the standalone gateway is ~27M. Nothing is downloaded or run from
+# the network on the phone: the service is part of the APK.
+rm -rf "$WORK/ofm" "$sys/opt/ofm"
+mkdir -p "$WORK/ofm" "$sys/opt/ofm"
+tar -xzf "$WORK/ofm.tgz" -C "$WORK/ofm" --strip-components=1
+(cd "$WORK/ofm" && tar -cf - \
+	--exclude=.git --exclude=node_modules --exclude=docs --exclude=.github \
+	--exclude=vendor/magpie/bin --exclude=src/engine-parts \
+	--exclude='*.png' --exclude='*.jpg' --exclude='*.svg' --exclude='*.webp' --exclude='*.gif' \
+	--exclude='.trae-html-share-packages' --exclude=client.js \
+	.) | tar -xf - -C "$sys/opt/ofm"
+
 say "proot"
 rm -rf "$WORK/debs"
 python3 - "$WORK" "$WORK/debs" <<'PY'
@@ -144,6 +165,10 @@ done
 say "the repository, with what it needs to run"
 rm -rf "$sys/app"
 mkdir -p "$sys/app"
+# The proxy is the one script the phone runs directly. It gets a fixed path in
+# the root so startup does not depend on where a checkout happened to land.
+mkdir -p "$sys/opt/ofm-proxy"
+cp "$ROOT/scripts/ofm-proxy.mjs" "$sys/opt/ofm-proxy/ofm-proxy.mjs"
 # `android` stays behind entirely: it is this app's own source and build output,
 # and the asset being written right now lives inside it.
 (cd "$ROOT" && tar -cf - --exclude ./node_modules --exclude ./.git --exclude ./build --exclude ./android .) |

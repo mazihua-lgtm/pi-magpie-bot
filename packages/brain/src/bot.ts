@@ -459,6 +459,10 @@ export class Bot {
 
 /** Free first: the point of the product is that a new user pays nothing. */
 export function pickDefaultModel(ids: readonly string[]): string {
+	// The stable free model (behind a failover proxy) or a free routing group is
+	// the best default: failover keeps working when one lane runs out of quota.
+	const group = ids.find((id) => id === 'ofm/free' || id === 'group/free' || id === 'group/ofm-free');
+	if (group) return group;
 	const free = ids.find((id) => /(^|\/)free$|-free$/.test(id) || id.includes('/free'));
 	if (free) return free;
 	const first = ids[0];

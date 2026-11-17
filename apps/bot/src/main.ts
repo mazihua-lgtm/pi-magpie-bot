@@ -17,6 +17,7 @@ import {
 	addProvider,
 	ensureFreeRoute,
 	ensureGateway,
+	ensureOfmRoute,
 	findMagpieBinary,
 	FREE_GROUP,
 	FREE_MODEL_PREFIX,
@@ -25,6 +26,7 @@ import {
 	hasConfiguredModel,
 	installMagpie,
 	listModels,
+	OFM_PROVIDER,
 } from '@pi-magpie-bot/gateway';
 import { VENDORS } from './vendors.ts';
 
@@ -64,6 +66,14 @@ const magpieCli = remoteGateway ? 'docker compose exec magpie /magpie' : 'magpie
 /** Which model the user asked for, and whether that means the free pool. */
 const wanted = env.MAGPIE_MODEL?.trim();
 const wantsFree = wanted === `group/${FREE_GROUP}`;
+
+/**
+ * The local free-model service. The Android payload bundles a slimmed copy at
+ * /opt/ofm; a desktop can point OFM_SOURCE at one it installed. Absent either,
+ * this is a normal install and the older plugin route is used instead.
+ */
+const ofmSource = env.OFM_SOURCE?.trim();
+const ofmDataDir = join(dataDir, 'ofm');
 
 /** magpie's own CLI, fetched and checked if this machine has none. */
 async function magpieBinary(): Promise<string | undefined> {
@@ -164,9 +174,19 @@ async function models(): Promise<Look> {
 		let binary: string | undefined;
 		if (start && (wantsFree || !wanted)) {
 			binary = await magpieBinary();
-			const configured = wanted ? undefined : binary ? await hasConfiguredModel(binary) : undefined;
-			if (configured === true) log('a provider is already configured; leaving the free pool alone');
-			else if (binary) await ensureFreeRoute({ binary, log });
+			if (binary && ofmSource) {
+				// Always run this, even with a provider already registered: the
+				// local service and its proxy are processes, not just config, and
+				// a reboot leaves the config but not the running processes. The
+				// function is idempotent - it starts only what is down.
+				await ensureOfmRoute({ binary, node: process.execPath, sourceDir: ofmSource, dataDir: ofmDataDir, log });
+			} else {
+				// The older plugin route, for a machine with no bundled service.
+				// Its sign-in is slow, so a machine that already has a model skips it.
+				const configured = wanted ? undefined : binary ? await hasConfiguredModel(binary) : undefined;
+				if (configured === true) log('a provider is already configured; leaving the free pool alone');
+				else if (binary) await ensureFreeRoute({ binary, log });
+			}
 		}
 		const started = await ensureGateway(config, { start, installDir: ourBinDir, binary, log });
 		return { ids: (await listModels(config)).map((model) => model.id), binary: started.binary ?? binary };

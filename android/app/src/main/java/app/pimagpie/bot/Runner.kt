@@ -42,6 +42,10 @@ object Runner {
 			"PATH" to "/opt/node/bin:/usr/local/bin:/usr/bin:/bin",
 			"MAGPIE_BIN" to "/opt/magpie/magpie",
 			"MAGPIE_BASE_URL" to "http://127.0.0.1:3425",
+			// The bundled free-model service lives in the root already; it keeps
+			// its own key and model cache under /data, which survives upgrades.
+			"OFM_SOURCE" to "/opt/ofm",
+			"OFM_PROXY_DIR" to "/opt/ofm-proxy",
 			"WEB_HOST" to "127.0.0.1",
 			"WEB_PORT" to PORT.toString(),
 			"DATA_DIR" to "/data",

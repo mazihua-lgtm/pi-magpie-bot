@@ -128,6 +128,10 @@ describe('default model', () => {
 	it('takes a free routing group before anything that costs money', async () => {
 		const { pickDefaultModel } = await import('../src/index.ts');
 		expect(pickDefaultModel(['wokey/claude-haiku-5-5', 'group/free'])).toBe('group/free');
+		// The failover-proxy model wins over a single model: a quota-limited
+		// lane must not end the conversation.
+		expect(pickDefaultModel(['ofm/deepseek-v4.1-flash-free', 'ofm/free'])).toBe('ofm/free');
+		expect(pickDefaultModel(['ofm/deepseek-v4.1-flash-free', 'group/free'])).toBe('group/free');
 		expect(pickDefaultModel(['our-free-model/x-free', 'wokey/y'])).toBe('our-free-model/x-free');
 		expect(pickDefaultModel(['wokey/y'])).toBe('wokey/y');
 		expect(() => pickDefaultModel([])).toThrow();
