@@ -437,6 +437,12 @@ if (!webDisabled) {
 		port: Number(env.WEB_PORT ?? 8787),
 		host: webHost,
 		password: env.WEB_PASSWORD,
+		// Kept in the host tables: a secret that only lives in memory signs every
+		// phone out at every restart, update or reboot.
+		secret: {
+			get: () => bot.kv.get('web-cookie-secret'),
+			set: (value) => bot.kv.set('web-cookie-secret', value),
+		},
 		// A reopened tab gets the conversation back instead of an empty page.
 		history: (target) => bot.transcript('web', target),
 		onMessage: (event) => {

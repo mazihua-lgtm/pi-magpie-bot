@@ -224,3 +224,18 @@ describe('targets', () => {
 		db.close();
 	});
 });
+
+describe('schedule ownership and expiry', () => {
+	it('expires only the pending cards of the conversation asked about', () => {
+		const db = host();
+		const approvals = new Approvals(db);
+		approvals.ask({ conversation: 'c1', channel: 'web', target: 't', action: 'a1' });
+		approvals.ask({ conversation: 'c2', channel: 'web', target: 't', action: 'a2' });
+
+		expect(approvals.expirePendingFor('c1')).toBe(1);
+		expect(approvals.pendingFor('c1')).toBeUndefined();
+		// The other conversation's card is untouched: its run is still going.
+		expect(approvals.pendingFor('c2')?.action).toBe('a2');
+		db.close();
+	});
+});

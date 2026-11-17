@@ -74,6 +74,20 @@ export class Approvals {
 		return Number(result.changes);
 	}
 
+	/**
+	 * The pending cards of one conversation, closed. Called when the run that
+	 * asked is torn down (a timeout, an abort): the poll in `askApproval` keeps
+	 * going after that, so a card left pending would still accept a "好" the
+	 * user types much later - the stray approval the startup expiry exists to
+	 * prevent, arriving mid-run instead of at the next restart.
+	 */
+	expirePendingFor(conversation: string): number {
+		const result = this.host.db
+			.prepare(`UPDATE approvals SET status = 'expired', decided_at = ? WHERE conversation = ? AND status = 'pending'`)
+			.run(Date.now(), conversation);
+		return Number(result.changes);
+	}
+
 	decide(id: string, status: 'allowed' | 'denied' | 'expired'): boolean {
 		const result = this.host.db
 			.prepare(`UPDATE approvals SET status = ?, decided_at = ? WHERE id = ? AND status = 'pending'`)

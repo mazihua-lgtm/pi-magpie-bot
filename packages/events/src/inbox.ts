@@ -59,6 +59,17 @@ export class Inbox {
 	}
 
 	/**
+	 * Marks a batch of rows as being answered together with their first. Left
+	 * pending, a crash mid-run would close the first with "interrupted" and then
+	 * answer the rest again on restart - the exact double answer this design
+	 * promises not to send.
+	 */
+	finishMany(ids: string[]): void {
+		const update = this.host.db.prepare(`UPDATE inbox SET status = 'running' WHERE id = ?`);
+		for (const id of ids) update.run(id);
+	}
+
+	/**
 	 * After a crash: a row left `running` was being answered when the process
 	 * died. Its run does resume inside pi-durable, but nothing is left that
 	 * would deliver the answer, and re-running it would answer twice. So it is

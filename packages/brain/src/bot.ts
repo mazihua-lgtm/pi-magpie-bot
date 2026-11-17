@@ -282,12 +282,27 @@ export class Bot {
 	}
 
 	/**
-	 * Turn due timers into inbox events. A timer that fired while the process
-	 * was down still fires, once.
+	 * Turn due timers into deliveries and inbox events. A timer that fired while
+	 * the process was down still fires, once.
+	 *
+	 * The reminder text goes to the user first, straight to the outbox: the run
+	 * that follows can add words, but the point of "十分钟后提醒我关火" is the
+	 * words themselves, and a model that is out of quota at that moment must not
+	 * replace them with "没能回答". A one-shot row is already deleted by the time
+	 * the model runs, so a failed run used to lose it for good.
 	 */
 	fireDueSchedules(): number {
 		const due = this.schedules.due(this.now());
 		for (const row of due) {
+			const target = this.targets.get(row.conversation);
+			if (target) {
+				this.outbox.enqueue({
+					conversation: row.conversation,
+					channel: target.channel,
+					target: target.target,
+					text: `⏰ ${row.text}`,
+				});
+			}
 			this.inbox.admit({
 				source: 'schedule',
 				sourceKey: row.id + row.next_run_at,
@@ -310,14 +325,20 @@ export class Bot {
 			if (!first) break;
 
 			const batched = this.inbox.pendingFor(first.conversation);
+			// The whole batch is part of this run, not just its first row: left
+			// pending, a crash would close the first with "interrupted" and then
+			// answer the rest again on restart.
+			this.inbox.finishMany(batched.map((row) => row.id));
 			const text = [first.text, ...batched.map((row) => row.text)].join('\n');
 			try {
 				await this.answer(first.conversation, text);
 			} catch (error) {
 				// A run that threw must still close its rows: left `running` they would
 				// never be answered, never be retried, and never be mentioned until the
-				// next restart.
+				// next restart. Its approval cards go too - the poll inside cannot
+				// know the run is over.
 				console.error('[bot] run failed:', error);
+				this.approvals.expirePendingFor(first.conversation);
 				this.tell(first.conversation, text, '这条消息处理时出了错，我没能回上来。可以再说一次。', 'Something broke while I was answering that one. Could you send it again?');
 			}
 			for (const row of [first, ...batched]) this.inbox.finish(row.id);
@@ -348,6 +369,10 @@ export class Bot {
 		]).catch(async (error) => {
 			console.error(`[bot] giving up on a run: ${(error as Error).message}`);
 			await submission.abort(BACKGROUND_CONTEXT).catch(() => {});
+			// The run is gone but any approval card it asked is still pending, and
+			// the poll inside does not know. Left open, a "好" typed long after
+			// would approve a call that will never run; close them with the run.
+			this.approvals.expirePendingFor(conversationId);
 			return { status: 'unanswered' as const, reason: 'timed_out' };
 		});
 
@@ -498,7 +523,15 @@ export class Bot {
 		return () => void this.close();
 	}
 
-	/** For tests and for the web UI: what is waiting right now. */
+	/**
+	 * Small durable facts, for a surface that must outlive the process: the web
+	 * channel's cookie secret lives here, so a restart does not sign everyone
+	 * out. Not a general store - nothing else belongs in it yet.
+	 */
+	get kv(): { get(key: string): string | undefined; set(key: string, value: string): void } {
+		return this.settings;
+	}
+
 	inspect(): { pendingEvents: number; pendingMessages: number; schedules: number } {
 		return {
 			pendingEvents: this.inbox.count('pending'),

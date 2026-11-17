@@ -4,7 +4,7 @@ import { WebChannel } from '../src/index.ts';
 
 const servers: WebChannel[] = [];
 
-const start = async (options: { password?: string; history?: (target: string) => Promise<Array<{ role: 'me' | 'bot'; text: string }>> } = {}) => {
+const start = async (options: { password?: string; secret?: { get(): string | undefined; set(value: string): void }; history?: (target: string) => Promise<Array<{ role: 'me' | 'bot'; text: string }>> } = {}) => {
 	const messages: { target: string; text: string }[] = [];
 	const channel = new WebChannel({
 		port: 0,
@@ -264,5 +264,42 @@ describe('installing the page on a phone', () => {
 		expect(page).toContain('rel="manifest" href="/manifest.webmanifest"');
 		expect(page).toContain('apple-touch-icon');
 		expect(page).toContain("navigator.serviceWorker.register('/sw.js')");
+	});
+});
+
+describe('the cookie secret', () => {
+	it('is reused from the store instead of signing everyone out at restart', async () => {
+		let stored: string | undefined;
+		const secretStore = {
+			get: () => stored,
+			set: (value: string) => {
+				stored = value;
+			},
+		};
+		const first = await start({ password: 'pw', secret: secretStore });
+		expect(stored).toMatch(/^[0-9a-f]{64}$/);
+
+		// A "restart": a new channel, same store. The session cookie the first
+		// one minted must still be accepted by the second.
+		// The browser holds sid (from the page) and auth (from logging in).
+		const page = await fetch(`${first.url}/`);
+		const sid = page.headers.get('set-cookie')?.split(';')[0] ?? '';
+		const login = await fetch(`${first.url}/api/login`, {
+			method: 'POST',
+			headers: { 'content-type': 'application/json', cookie: sid },
+			body: JSON.stringify({ password: 'pw' }),
+		});
+		const auth = login.headers.getSetCookie().map((line) => line.split(';')[0])[0] ?? '';
+		const cookie = `${sid}; ${auth}`;
+
+		// A "restart": a new channel, same store. The session cookie the first
+		// one minted must still be accepted by the second.
+		const second = await start({ password: 'pw', secret: secretStore });
+		const again = await fetch(`${second.url}/api/message`, {
+			method: 'POST',
+			headers: { 'content-type': 'application/json', cookie },
+			body: JSON.stringify({ text: '重启后还在' }),
+		});
+		expect(again.status).toBe(202);
 	});
 });

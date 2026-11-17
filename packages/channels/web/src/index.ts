@@ -17,6 +17,12 @@ export interface WebChannelOptions {
 	 * page. Given, the transcript is what a new connection shows.
 	 */
 	history?: (target: string) => Promise<Array<{ role: 'me' | 'bot'; text: string }>>;
+	/**
+	 * Read and write the cookie-signing secret here. Given, sessions survive a
+	 * restart: without it, every restart silently signs everyone out, which on a
+	 * phone means re-entering the password after every update or reboot.
+	 */
+	secret?: { get(): string | undefined; set(value: string): void };
 	onMessage: (event: MessageEvent) => void | Promise<void>;
 }
 
@@ -84,7 +90,8 @@ async function readJson(request: IncomingMessage): Promise<Record<string, unknow
 export class WebChannel implements Channel {
 	readonly id = 'web';
 	private readonly sessions = new Map<string, Session>();
-	private readonly secret = randomBytes(32);
+	/** Signs the session cookie. Persisted through `options.secret` when given. */
+	private readonly secret: Buffer;
 	/** Wrong passwords by remote address: a password is only a password if it cannot be guessed at speed. */
 	private readonly misses = new Map<string, { count: number; until: number }>();
 	private server: ReturnType<typeof createServer> | undefined;
@@ -94,6 +101,15 @@ export class WebChannel implements Channel {
 
 	constructor(options: WebChannelOptions) {
 		this.options = options;
+		// Reuse the secret this installation already has, so a restart does not
+		// sign everyone out; a fresh one is written back for the next time.
+		const saved = options.secret?.get();
+		if (saved && /^[0-9a-f]{64}$/i.test(saved)) {
+			this.secret = Buffer.from(saved, 'hex');
+		} else {
+			this.secret = randomBytes(32);
+			options.secret?.set(this.secret.toString('hex'));
+		}
 	}
 
 	get url(): string {

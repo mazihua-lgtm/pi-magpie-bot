@@ -109,8 +109,15 @@ export function createChatExtension(options: ChatExtensionOptions): Extension {
 				name: 'cancel_reminder',
 				description: 'Cancel a reminder by its id, as list_reminders shows it.',
 				parameters: obj({ id: str() }),
-				async execute(args) {
-					return reply(options.schedules.remove(args.id) ? 'cancelled' : 'no such reminder');
+				async execute(args, api) {
+					// A reminder belongs to one chat. The id alone would let any
+					// conversation cancel any other's: list_reminders hands ids out, and
+					// with more than one allowed user one chat could reach into another's.
+					const chat = options.targets.getByAgent(api.conversationId);
+					if (!chat) return reply('this conversation has no chat', true);
+					const row = options.schedules.list(chat.conversation).find((entry) => entry.id === args.id);
+					if (!row) return reply('no such reminder in this chat');
+					return reply(options.schedules.remove(row.id) ? 'cancelled' : 'no such reminder');
 				},
 			}),
 		],

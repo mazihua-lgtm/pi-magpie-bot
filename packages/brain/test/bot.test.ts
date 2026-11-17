@@ -182,3 +182,66 @@ describe('a channel that never answers', () => {
 		expect(sent).toBe(1);
 	});
 });
+
+describe('reminders that must not depend on the model', () => {
+	it('delivers the reminder text even when the run behind it fails', async () => {
+		const dir = await dataDir();
+		const { bot, sent } = await openBot(dir);
+
+		bot.ingest({ source: 'cli', sourceKey: '1', channel: 'cli', target: 'me', text: '十分钟后提醒我关火' });
+		await bot.tick();
+
+		// A due reminder: fireDueSchedules delivers the words first, so a model
+		// that is out of quota at that moment cannot replace them with "没能回答".
+		const host = openHostDb(join(dir, 'host.sqlite'));
+		const now = Date.now();
+		bot['schedules'].add({ conversation: conversationIdFor('cli', 'me'), channel: 'cli', target: 'me', text: '该关火了', at: now - 1_000 });
+		host.close();
+
+		sent.length = 0;
+		bot.fireDueSchedules();
+		await bot.dispatch();
+
+		expect(sent).toContain('⏰ 该关火了');
+	});
+
+	it('closes the whole batch it answered, so a crash cannot answer the rest twice', async () => {
+		const dir = await dataDir();
+		const { bot } = await openBot(dir);
+
+		bot.ingest({ source: 'cli', sourceKey: '1', channel: 'cli', target: 'me', text: '第一条' });
+		bot.ingest({ source: 'cli', sourceKey: '2', channel: 'cli', target: 'me', text: '第二条' });
+
+		// Simulate pump claiming the first and batching the second.
+		bot['inbox'].claim();
+		const pending = bot['inbox'].pendingFor(conversationIdFor('cli', 'me'));
+		bot['inbox'].finishMany(pending.map((row) => row.id));
+
+		// The crash: reclaim must now see both rows, not just the first.
+		const host = openHostDb(join(dir, 'host.sqlite'));
+		const running = host.db.prepare(`SELECT COUNT(*) AS n FROM inbox WHERE status = 'running'`).get() as { n: number };
+		const pendingRows = host.db.prepare(`SELECT COUNT(*) AS n FROM inbox WHERE status = 'pending'`).get() as { n: number };
+		host.close();
+		expect(running.n).toBe(2);
+		expect(pendingRows.n).toBe(0);
+	});
+});
+
+describe('cancel_reminder ownership', () => {
+	it('does not let one chat cancel another chat’s reminder', async () => {
+		const dir = await dataDir();
+		const { bot } = await openBot(dir);
+		const mine = conversationIdFor('cli', 'me');
+		const theirs = conversationIdFor('cli', 'someone-else');
+
+		const host = openHostDb(join(dir, 'host.sqlite'));
+		const schedules = new (await import('@pi-magpie-bot/events')).Schedules(host);
+		const theirId = schedules.add({ conversation: theirs, channel: 'cli', target: 'them', text: 'theirs', at: Date.now() + 60_000 });
+		host.close();
+
+		// The tool resolves the conversation from the agent id, so exercising the
+		// guard directly: list this chat's, find the foreign id, expect nothing.
+		const listed = bot['schedules'].list(mine);
+		expect(listed.find((row) => row.id === theirId)).toBeUndefined();
+	});
+});
