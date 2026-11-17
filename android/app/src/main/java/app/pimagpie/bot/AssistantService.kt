@@ -9,6 +9,8 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.net.ConnectivityManager
+import android.net.LinkProperties
+import android.net.Network
 import android.os.Build
 import android.os.IBinder
 import org.json.JSONObject
@@ -33,6 +35,37 @@ class AssistantService : Service() {
 		super.onCreate()
 		channel(CHANNEL_RUN, getString(R.string.running), NotificationManager.IMPORTANCE_LOW)
 		channel(CHANNEL_ALERT, "提醒", NotificationManager.IMPORTANCE_HIGH)
+		watchNetwork()
+	}
+
+	/**
+	 * The root's resolver is a file this app writes, and it is written from the
+	 * network the phone was on at the time. Moving from Wi-Fi to mobile data
+	 * leaves an address that no longer answers, and then every lookup fails
+	 * while the assistant still looks alive: it answers "the free pool may be
+	 * used up" because that is what a failed request looks like from inside.
+	 */
+	private fun watchNetwork() {
+		try {
+			val connectivity = getSystemService(ConnectivityManager::class.java)
+			connectivity.registerDefaultNetworkCallback(
+				object : ConnectivityManager.NetworkCallback() {
+					override fun onAvailable(network: Network) = refreshNameservers()
+					override fun onLinkPropertiesChanged(network: Network, properties: LinkProperties) = refreshNameservers()
+				},
+			)
+		} catch (error: Exception) {
+			Logs.add("[app] could not watch the network: ${error.message}")
+		}
+	}
+
+	private fun refreshNameservers() {
+		try {
+			nameservers()
+			Logs.add("[app] 网络变了，DNS 已更新")
+		} catch (error: Exception) {
+			Logs.add("[app] could not refresh DNS: ${error.message}")
+		}
 	}
 
 	override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {

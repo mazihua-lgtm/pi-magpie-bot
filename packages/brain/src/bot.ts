@@ -51,6 +51,10 @@ export interface BotOptions {
 	 * Every such call asks for approval in the chat first.
 	 */
 	workspaceDir?: string;
+	/** Injected by tests, so a hanging channel need not take thirty seconds. */
+	sendTimeoutMs?: number;
+	/** Injected by tests, so a hung run need not take five minutes. */
+	runTimeoutMs?: number;
 }
 
 export interface MessageEvent {
@@ -113,7 +117,9 @@ export class Bot {
 	/** Held while this process owns the data directory. */
 	private readonly lock: DataDirLock;
 	/** How long one run may take before it is abandoned and the loop moves on. */
-	private readonly runTimeoutMs = 5 * 60_000;
+	private readonly runTimeoutMs: number;
+	/** How long one channel may take to accept a message before it counts as failed. */
+	private readonly sendTimeoutMs: number;
 
 	private constructor(
 		harness: Harness,
@@ -123,11 +129,14 @@ export class Bot {
 		dataDir: string,
 		now: () => number,
 		lock: DataDirLock,
+		options: BotOptions,
 	) {
 		this.harness = harness;
 		this.modelId = modelId;
 		this.systemPrompt = systemPrompt;
 		this.lock = lock;
+		this.runTimeoutMs = options.runTimeoutMs ?? 5 * 60_000;
+		this.sendTimeoutMs = options.sendTimeoutMs ?? 30_000;
 		this.host = host;
 		this.inbox = new Inbox(host);
 		this.outbox = new Outbox(host);
@@ -190,7 +199,7 @@ export class Bot {
 			lock.release();
 			throw error;
 		}
-		const bot = new Bot(harness, host, modelId, options.systemPrompt ?? DEFAULT_SYSTEM_PROMPT, options.dataDir, now, lock);
+		const bot = new Bot(harness, host, modelId, options.systemPrompt ?? DEFAULT_SYSTEM_PROMPT, options.dataDir, now, lock, options);
 		bot.recover();
 		return bot;
 	}
@@ -425,7 +434,16 @@ export class Bot {
 				continue;
 			}
 			try {
-				await channel.send(row.target, row.text);
+				// A send that never returns freezes every other message to every
+				// channel: this loop is single-file, and the row would sit in
+				// `sending` until a restart, where it is marked unknown and never
+				// retried. Give it a bound and let the retry handle the rest.
+				await Promise.race([
+					channel.send(row.target, row.text),
+					new Promise<never>((_, reject) =>
+						setTimeout(() => reject(new Error(`send to ${row.channel} timed out`)), this.sendTimeoutMs).unref?.(),
+					),
+				]);
 				this.outbox.sent(row.id);
 				sent += 1;
 			} catch (error) {

@@ -137,3 +137,48 @@ describe('default model', () => {
 		expect(() => pickDefaultModel([])).toThrow();
 	});
 });
+
+describe('a channel that never answers', () => {
+	it('does not freeze delivery to every other channel', async () => {
+		const dir = await dataDir();
+		// A send that never settles: the openai/feishu SDKs can do this on a half-open
+		// socket, and the delivery loop is one file - it would stop for good.
+		const bot = await Bot.open({ dataDir: dir, models: createModels(), modelId: 'test/model', sendTimeoutMs: 50 });
+		cleanups.push(async () => {
+			await bot.close();
+		});
+		const delivered: string[] = [];
+		bot.register({
+			id: 'stuck',
+			send: () => new Promise<void>(() => {}),
+		});
+		bot.register({
+			id: 'cli',
+			async send(_target, text) {
+				delivered.push(text);
+			},
+		});
+
+		// One message for the stuck channel, one for the working one.
+		bot.ingest({ source: 'stuck', sourceKey: '1', channel: 'stuck', target: 'me', text: 'hi' });
+		bot.ingest({ source: 'cli', sourceKey: '2', channel: 'cli', target: 'me', text: 'hi' });
+
+		// The stuck one is answered first, so the working one is behind it.
+		const host = openHostDb(join(dir, 'host.sqlite'));
+		const [stuck, working] = host.db
+			.prepare(`SELECT id FROM conversations ORDER BY created_at`)
+			.all() as Array<{ id: string }>;
+		host.close();
+		for (const [id, text] of [
+			[stuck!.id, 'stuck answer'],
+			[working!.id, 'working answer'],
+		] as const) {
+			bot['outbox'].enqueue({ conversation: id, channel: id === stuck!.id ? 'stuck' : 'cli', target: 'me', text });
+		}
+
+		const sent = await bot.dispatch();
+		// The stuck row timed out and went back in the queue; the other still went out.
+		expect(delivered).toEqual(['working answer']);
+		expect(sent).toBe(1);
+	});
+});

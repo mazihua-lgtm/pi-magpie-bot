@@ -60,3 +60,31 @@ describe('memory store', () => {
 		expect(await memory.readInstructions('c1')).toBe('Always answer in Chinese.');
 	});
 });
+
+describe('parallel writes', () => {
+	it('keeps every note in the index when several are written at once', async () => {
+		const memory = await store();
+		// The model can issue these in one round with tools running in parallel.
+		// The index is read-modify-write, so an unserialised run loses all but one.
+		await Promise.all([
+			memory.writeNote('c1', 'allergy', '花生过敏'),
+			memory.writeNote('c1', 'car', '蓝色比亚迪'),
+			memory.writeNote('c1', 'hours', '九点上班'),
+		]);
+
+		const index = await memory.readIndex('c1');
+		for (const name of ['allergy', 'car', 'hours']) {
+			expect(index).toContain(`- ${name}:`);
+		}
+		// The note bodies are all there too.
+		expect((await memory.listNotes('c1')).sort()).toEqual(['allergy', 'car', 'hours']);
+	});
+
+	it('still works after one write throws', async () => {
+		const memory = await store();
+		// An empty name is rejected before the queue; the next write must go through.
+		await expect(memory.writeNote('c1', '   ', 'x')).rejects.toThrow();
+		await memory.writeNote('c1', 'ok', 'fine');
+		expect(await memory.readNote('c1', 'ok')).toBe('fine');
+	});
+});

@@ -1,4 +1,4 @@
-import { mkdir, readFile, readdir, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, readdir, rename, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
 /**
@@ -19,9 +19,36 @@ export type ConversationKey = string | number;
 
 export class MemoryStore {
 	private readonly root: string;
+	/**
+	 * One write at a time per conversation. The index is read, edited and written
+	 * back, and the model may issue two memory_write calls in the same round: in
+	 * parallel, the second write would start from the index the first one read,
+	 * and one fact would vanish from the prompt for good while its note file sat
+	 * on disk looking fine.
+	 */
+	private readonly queues = new Map<string, Promise<unknown>>();
 
 	constructor(root: string) {
 		this.root = root;
+	}
+
+	/** Runs `work` after whatever is already queued for this conversation. */
+	private serialized<T>(conversationId: ConversationKey, work: () => Promise<T>): Promise<T> {
+		const key = String(conversationId);
+		const before = this.queues.get(key) ?? Promise.resolve();
+		// Run whether the previous one settled or threw: one failed write must not
+		// wedge the queue forever.
+		const run = before.then(work, work);
+		const tail = run.then(
+			() => undefined,
+			() => undefined,
+		);
+		this.queues.set(key, tail);
+		void tail.then(() => {
+			// Only the last one clears it, so a queued write keeps its place.
+			if (this.queues.get(key) === tail) this.queues.delete(key);
+		});
+		return run;
 	}
 
 	/** Guards the filesystem: a note name is a slug, never a path. */
@@ -51,7 +78,11 @@ export class MemoryStore {
 
 	private async write(path: string, text: string): Promise<void> {
 		await mkdir(join(path, '..'), { recursive: true });
-		await writeFile(path, text, 'utf8');
+		// Written aside and moved into place: a crash between truncate and write
+		// would otherwise leave a half note, and the index lists what it reads.
+		const temporary = `${path}.tmp`;
+		await writeFile(temporary, text, 'utf8');
+		await rename(temporary, path);
 	}
 
 	readInstructions(conversationId: ConversationKey): Promise<string> {
@@ -74,13 +105,17 @@ export class MemoryStore {
 	async writeNote(conversationId: ConversationKey, name: string, text: string): Promise<void> {
 		const slug = MemoryStore.slug(name);
 		const dir = this.dir(conversationId);
-		await this.write(join(dir, 'notes', `${slug}.md`), text);
+		// Queued, because the index below is read-modify-write and two calls in the
+		// same model round would otherwise overwrite each other's line.
+		await this.serialized(conversationId, async () => {
+			await this.write(join(dir, 'notes', `${slug}.md`), text);
 
-		const index = await this.readIndex(conversationId);
-		const line = `- ${slug}: ${firstLine(text)}`;
-		const lines = index.split('\n').filter((existing) => existing.trim() && !existing.startsWith(`- ${slug}:`));
-		lines.push(line);
-		await this.write(join(dir, 'notes', 'index.md'), `${lines.join('\n')}\n`);
+			const index = await this.readIndex(conversationId);
+			const line = `- ${slug}: ${firstLine(text)}`;
+			const lines = index.split('\n').filter((existing) => existing.trim() && !existing.startsWith(`- ${slug}:`));
+			lines.push(line);
+			await this.write(join(dir, 'notes', 'index.md'), `${lines.join('\n')}\n`);
+		});
 	}
 
 	async listNotes(conversationId: ConversationKey): Promise<string[]> {
