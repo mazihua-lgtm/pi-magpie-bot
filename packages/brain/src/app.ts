@@ -297,6 +297,9 @@ export class AppService implements AppBackend {
 		const { chats, schedules, targets } = this.bot.tables;
 		await this.bot.stop(row.conversation);
 		for (const schedule of schedules.list(row.conversation)) schedules.remove(schedule.id);
+		// A line the run enqueued just before it was stopped, or a reminder
+		// that fired in the same moment, would otherwise still be delivered.
+		this.bot.tables.outbox.dropFor(row.conversation);
 		this.bot.armScheduleTimer();
 		chats.remove(row.conversation);
 		// The same id again would otherwise continue the deleted conversation.

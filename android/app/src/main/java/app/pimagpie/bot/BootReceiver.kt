@@ -8,7 +8,11 @@ import android.content.Intent
 class BootReceiver : BroadcastReceiver() {
 	override fun onReceive(context: Context, intent: Intent) {
 		if (intent.action != Intent.ACTION_BOOT_COMPLETED) return
-		if (!Payload.installed(context)) return
+		// "Installed" means the unpack stamp matches this build: after an update
+		// that is false until the app is opened, but the old payload on disk can
+		// still run, and a phone that reboots before the next open must not lose
+		// its reminders. The service re-unpacks only once it has a moment alone.
+		if (!Paths.mark(context).exists()) return
 		AssistantService.start(context)
 	}
 }

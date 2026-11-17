@@ -239,7 +239,13 @@ class AppModel(application: Application) : AndroidViewModel(application) {
 			chats.clear()
 			chats.addAll(list)
 			sortChats()
-			list.forEach { if (it.busy) busy[it.id] = true }
+			// The word of the server, all of it: a chat that went idle while the
+			// stream was down must lose its busy dot here, or it never will.
+			for (chat in list) busy[chat.id] = chat.busy
+			for (id in busy.keys.toList()) if (list.none { it.id == id }) busy.remove(id)
+			// Chats deleted on the phone's other surface (or an old chat that is
+			// gone) must not keep their transcripts in memory forever.
+			for (id in messages.keys.toList()) if (id != PENDING && id != current && list.none { it.id == id }) messages.remove(id)
 		}
 	}
 
@@ -295,6 +301,7 @@ class AppModel(application: Application) : AndroidViewModel(application) {
 		val key = chat ?: PENDING
 		messages[key] = messages[key].orEmpty() + local
 		busy[key] = true
+		drafts.remove(key)
 		viewModelScope.launch {
 			try {
 				val target = if (chat == null && (draftModel != null || draftThinking)) {
@@ -319,15 +326,32 @@ class AppModel(application: Application) : AndroidViewModel(application) {
 			} catch (error: Exception) {
 				busy[key] = false
 				messages[key] = messages[key].orEmpty().filterNot { it.id == local.id }
-				attachments.addAll(images)
+				// Back to the chat it came from, not to whatever is on screen now.
+				failedDrafts[key] = body to images
 				say("没发出去：${error.message}")
-				restoreDraft = body
 			}
 		}
 	}
 
-	/** Text handed back to the composer when sending failed. */
-	var restoreDraft by mutableStateOf<String?>(null)
+	/** Text handed back to the composer when sending failed, by chat. */
+	private val failedDrafts = mutableStateMapOf<String, Pair<String, List<app.pimagpie.bot.data.Attachment>>>()
+	private val drafts = mutableStateMapOf<String, String>()
+
+	/** A chat's key in these maps: a new chat not yet sent counts as one. */
+	private fun keyOf(chat: String?): String = chat ?: PENDING
+
+	/** What the composer shows for a chat: its draft, plus anything a failed send left behind. */
+	fun draftFor(chat: String?): Pair<String, List<app.pimagpie.bot.data.Attachment>> {
+		val key = keyOf(chat)
+		val saved = failedDrafts.remove(key)
+		if (saved != null) return saved
+		return drafts[key].orEmpty() to emptyList()
+	}
+
+	fun saveDraft(chat: String?, text: String) {
+		val key = keyOf(chat)
+		if (text.isBlank()) drafts.remove(key) else drafts[key] = text
+	}
 
 	fun stop() {
 		val chat = current ?: return
@@ -372,6 +396,8 @@ class AppModel(application: Application) : AndroidViewModel(application) {
 	fun delete(chat: Chat) {
 		chats.removeAll { it.id == chat.id }
 		messages.remove(chat.id)
+		busy.remove(chat.id)
+		partials.remove(chat.id)
 		if (current == chat.id) current = null
 		viewModelScope.launch {
 			runCatching { api.deleteChat(chat.id) }.onFailure {
@@ -439,20 +465,25 @@ class AppModel(application: Application) : AndroidViewModel(application) {
 			speaking = id
 			return
 		}
-		tts = TextToSpeech(getApplication()) { status ->
+		var made: TextToSpeech? = null
+		made = TextToSpeech(getApplication()) { status ->
 			if (status != TextToSpeech.SUCCESS) {
 				say("这台手机没有可用的朗读引擎")
-				tts = null
+				// A failed engine still bound a service; drop it whole.
+				made?.shutdown()
+				if (tts === made) tts = null
 				return@TextToSpeech
 			}
-			tts?.language = Locale.CHINA
-			tts?.setOnUtteranceProgressListener(object : android.speech.tts.UtteranceProgressListener() {
+			val engine: TextToSpeech = made!!
+			engine.language = Locale.CHINA
+			engine.setOnUtteranceProgressListener(object : android.speech.tts.UtteranceProgressListener() {
 				override fun onStart(utteranceId: String?) {}
 				override fun onDone(utteranceId: String?) { if (speaking == utteranceId) speaking = null }
 				@Deprecated("Deprecated in Java")
 				override fun onError(utteranceId: String?) { if (speaking == utteranceId) speaking = null }
 			})
-			tts?.speak(plain, TextToSpeech.QUEUE_FLUSH, null, id)
+			engine.speak(plain, TextToSpeech.QUEUE_FLUSH, null, id)
+			tts = made
 			speaking = id
 		}
 	}

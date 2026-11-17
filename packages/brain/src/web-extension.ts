@@ -34,7 +34,7 @@ export interface WebExtensionOptions {
  */
 export function isPrivateAddress(address: string): boolean {
 	const ip = address.replace(/^\[|\]$/g, '').toLowerCase();
-	const mapped = /^::ffff:(\d+\.\d+\.\d+\.\d+)$/.exec(ip)?.[1];
+	const mapped = /^::ffff:(.+)$/.exec(ip)?.[1];
 	if (mapped) return isPrivateAddress(mapped);
 	if (isIP(ip) === 4) {
 		const [a = 0, b = 0] = ip.split('.').map(Number);

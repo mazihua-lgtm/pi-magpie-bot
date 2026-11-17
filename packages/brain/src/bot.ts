@@ -742,7 +742,9 @@ export class Bot {
 		return (view.messages as readonly Message[])
 			.filter((message) => message.role === 'user' || message.role === 'assistant')
 			.map((message) => ({ role: message.role === 'user' ? ('me' as const) : ('bot' as const), text: textOf(message) }))
-			.filter((entry) => entry.text.trim() !== '')
+			// The silence a plain reminder is answered with (see the system prompt)
+			// is for the bot's bookkeeping, never a bubble.
+			.filter((entry) => entry.text.trim() !== '' && !isNoReply(entry.text))
 			.slice(-limit);
 	}
 
@@ -859,8 +861,8 @@ export class Bot {
 	 * The host tables, for a surface in front of this bot (the app API) that
 	 * lists and changes what the bot keeps. Not for the loop's own state.
 	 */
-	get tables(): { chats: Chats; schedules: Schedules; targets: Targets; approvals: Approvals; memory: MemoryStore } {
-		return { chats: this.chats, schedules: this.schedules, targets: this.targets, approvals: this.approvals, memory: this.memory };
+	get tables(): { chats: Chats; schedules: Schedules; targets: Targets; approvals: Approvals; memory: MemoryStore; outbox: Outbox } {
+		return { chats: this.chats, schedules: this.schedules, targets: this.targets, approvals: this.approvals, memory: this.memory, outbox: this.outbox };
 	}
 
 	private async ensureConversation(conversationId: string) {

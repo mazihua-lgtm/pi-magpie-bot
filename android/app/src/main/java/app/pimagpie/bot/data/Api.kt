@@ -42,14 +42,17 @@ class Api(context: Context) {
 
 	/** What `/healthz` says: null when nothing answers yet. */
 	suspend fun health(): JSONObject? = withContext(Dispatchers.IO) {
+		val connection = open("/healthz", 1_500)
 		try {
-			val connection = open("/healthz", 1_500)
-			val ok = connection.responseCode == 200
-			val body = connection.inputStream.bufferedReader().readText()
-			connection.disconnect()
-			if (ok) runCatching { JSONObject(body) }.getOrDefault(JSONObject().put("ok", true)) else null
+			val code = connection.responseCode
+			// The body rides the same socket whether it answered or not.
+			val stream = if (code < 400) connection.inputStream else connection.errorStream
+			val body = stream?.bufferedReader()?.readText().orEmpty()
+			if (code == 200) runCatching { JSONObject(body) }.getOrDefault(JSONObject().put("ok", true)) else null
 		} catch (_: Exception) {
 			null
+		} finally {
+			connection.disconnect()
 		}
 	}
 
@@ -138,6 +141,9 @@ class Api(context: Context) {
 		val connection = open("/api/events?v=2", 5_000)
 		connection.readTimeout = 60_000 // keep-alives come every 20 s
 		connection.setRequestProperty("Accept", "text/event-stream")
+		// `disconnect` before the connection is up is a no-op, and the reader
+		// thread would then hold a stream nobody wants. One flag closes it either way.
+		val closed = java.util.concurrent.atomic.AtomicBoolean(false)
 		val reader = Thread {
 			try {
 				if (connection.responseCode != 200) throw ApiError(connection.responseCode, "events")
@@ -146,6 +152,7 @@ class Api(context: Context) {
 				val data = StringBuilder()
 				connection.inputStream.bufferedReader().useLines { lines ->
 					for (line in lines) {
+						if (closed.get()) return@useLines
 						when {
 							line.startsWith("event:") -> name = line.removePrefix("event:").trim()
 							line.startsWith("data:") -> data.append(line.removePrefix("data:").trimStart())
@@ -164,7 +171,10 @@ class Api(context: Context) {
 		}
 		reader.isDaemon = true
 		reader.start()
-		awaitClose { connection.disconnect() }
+		awaitClose {
+			closed.set(true)
+			connection.disconnect()
+		}
 	}.flowOn(Dispatchers.IO)
 
 	private fun parse(name: String, data: String): Event? {

@@ -191,6 +191,15 @@ describe('chats', () => {
 		await expect(app.deleteChat(OWNER, chat.id)).rejects.toMatchObject({ status: 404 });
 	});
 
+	it('drops what the outbox still holds for a deleted chat', async () => {
+		const { bot } = await setup();
+		const row = bot.tables.chats.create({ conversation: conversationIdFor('web', `${OWNER}/x`), channel: 'web', owner: OWNER, chat: 'x', title: 'X', titleState: 'user' });
+		bot.tables.outbox.enqueue({ conversation: row.conversation, channel: 'web', target: `${OWNER}/x`, text: '删了还会到吗' });
+		const app = new AppService(bot);
+		await app.deleteChat(OWNER, 'x');
+		expect(bot.tables.outbox.next(9_999_999_999_999)?.conversation === row.conversation).toBe(false);
+	});
+
 	it('refuses an empty message and a bad image', async () => {
 		const { app } = await setup();
 		expect(() => app.send(OWNER, 'new', { text: '  ' })).toThrow(/空的/);

@@ -53,6 +53,11 @@ export class Outbox {
 		this.host = host;
 	}
 
+	/** Everything not yet sent for a conversation: its chat is gone. */
+	dropFor(conversation: string): void {
+		this.host.db.prepare(`DELETE FROM outbox WHERE conversation = ? AND status = 'pending'`).run(conversation);
+	}
+
 	enqueue(message: OutgoingMessage): number {
 		const result = this.host.db
 			.prepare(

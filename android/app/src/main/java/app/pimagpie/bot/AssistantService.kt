@@ -95,7 +95,11 @@ class AssistantService : Service() {
 	private fun work() {
 		try {
 			nameservers()
-			if (!Payload.installed(this)) {
+			// Unpack only when nothing is serving: a re-unpack deletes the very
+			// directory an assistant that survived the last process is running
+			// from, and "an assistant is already answering" would then keep a
+			// limping old one alive forever while the new one never starts.
+			if (!Payload.installed(this) && !answering()) {
 				Progress.post(getString(R.string.installing), 0)
 				Payload.unpack(this) { percent -> Progress.post(getString(R.string.installing), percent) }
 				Logs.add("[app] the environment is unpacked")
@@ -170,6 +174,8 @@ class AssistantService : Service() {
 		}
 	}
 
+	private val alerted = HashMap<String, Long>()
+
 	private fun listen(): Boolean {
 		val session = getSharedPreferences(PREFS, MODE_PRIVATE).getString(SESSION, null) ?: return false
 		val connection = URL("${Runner.BASE}/api/events?v=2").openConnection() as HttpURLConnection
@@ -192,7 +198,14 @@ class AssistantService : Service() {
 								val chat = event.optString("chat")
 								when (name) {
 									"message" -> event.optString("text").takeIf { it.isNotEmpty() }?.let { alert(getString(R.string.app_name), it, chat) }
-									"approval" -> alert("需要你同意", event.optString("action"), chat)
+									"approval" -> {
+										// The server replays every still-open card to each new
+										// connection; a card is news once, not once per reconnect.
+										val id = event.optString("id")
+										val due = System.currentTimeMillis()
+										if (id.isNotEmpty() && alerted.put(id, due) == null) alert("需要你同意", event.optString("action"), chat)
+										alerted.entries.removeAll { due - it.value > 10 * 60_000 }
+									}
 								}
 							}
 						}

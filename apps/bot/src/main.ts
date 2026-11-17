@@ -462,7 +462,9 @@ if (!webDisabled) {
 						},
 					}
 				: {}),
-			restart: () => void close('a model key was added, restarting'),
+			// A moment after the answer leaves, so a socket the phone has not
+			// finished reading is not torn down mid-answer (an RST discards it).
+			restart: () => setTimeout(() => close('a model key was added, restarting'), 500),
 		}),
 		onMessage: (event) => {
 			bot.ingest(event);

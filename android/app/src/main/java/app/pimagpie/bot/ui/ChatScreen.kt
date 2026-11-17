@@ -526,12 +526,18 @@ private fun Composer(model: AppModel, busy: Boolean) {
 	val palette = LocalPalette.current
 	val context = LocalContext.current
 	val haptics = LocalHapticFeedback.current
-	var text by rememberSaveable(model.current) { mutableStateOf("") }
-	LaunchedEffect(model.restoreDraft) {
-		model.restoreDraft?.let {
-			text = it
-			model.restoreDraft = null
-		}
+	// A draft belongs to its chat: typed here, here when the user comes back,
+	// and returned to its own chat when a send fails — not to whatever is open.
+	var text by remember(model.current) { mutableStateOf("") }
+	var pickedUp by remember { mutableStateOf(false) }
+	LaunchedEffect(model.current) {
+		val (saved, images) = model.draftFor(model.current)
+		text = saved
+		if (images.isNotEmpty()) model.attachments.addAll(images.take(4))
+		pickedUp = true
+	}
+	LaunchedEffect(text, pickedUp) {
+		if (pickedUp) model.saveDraft(model.current, text)
 	}
 	val chat = model.currentChat
 	val info = model.modelFor(chat)
