@@ -66,6 +66,21 @@ pnpm smoke                        # 用网关里第一个模型问一句，看�
 - **本地模型很吃内存**：7B 级别至少 8G 内存，跑不动就换更小的量化版。
 - **两条路可以并存**：免费池留着（`group/free`），自己的模型另建一组，改 `.env` 一个变量就切回来。
 
+## 六、免费池到量之后，还有两个不用注册的端点
+
+免费池这一轮全挂了（429 或 5xx），代理会往外再试一圈：OVHcloud 的公共推理端点（DeepSeek-V4.1-Flash、Qwen3.5-397B-A17B、gpt-oss-120b）和 Pollinations（gpt-oss-20b）。2026-11-18 实测：OVH 1–2 秒回，Pollinations 约 5 秒回，都不需要账号、不需要 key。
+
+它们排在免费池后面，只有前面全试完才轮到，请求也不会把免费池的 key 带过去。代价是 **prompt 会发给这两家**，和发给免费池本身没有区别。
+
+想关掉，或者换成自己的端点：
+
+```sh
+OFM_EXTRA_LANES='[]'                                                                      # 关掉
+OFM_EXTRA_LANES='[{"name":"mine","url":"https://…/v1/chat/completions","model":"…"}]'      # 换掉
+```
+
+不带这个环境变量时，用的就是上面那四条内置车道（见 `scripts/ofm-proxy.mjs` 的 `DEFAULT_EXTERNAL`）。要带 key 的端点，在那一项里加 `"key"` 就行。
+
 ---
 
 ## In English

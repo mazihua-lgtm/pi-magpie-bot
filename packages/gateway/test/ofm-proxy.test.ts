@@ -135,4 +135,56 @@ describe('the free-model proxy', () => {
 		expect(seen).toEqual(['kilo-auto/free']);
 		await proxy.close();
 	});
+
+	describe('endpoints outside the free pool', () => {
+		it('moves to one when the free pool is out of quota, and sends it no key', async () => {
+			const seen: Array<{ model: string; auth?: string }> = [];
+			const pool = await upstreamWith(emptyCatalogue, () => [429, '{"error":"quota"}']);
+			const outside = await outsideWith(() => [200, JSON.stringify({ id: 'x', choices: [{ message: { content: 'from outside' } }] })], seen);
+			const proxy = createProxy({
+				upstream: `http://127.0.0.1:${pool}`,
+				port: 0,
+				lanes: ['kilo-auto/free'],
+				extra: [{ name: 'outside/test', url: `http://127.0.0.1:${outside}/v1/chat/completions`, model: 'outside-model' }],
+			});
+			await proxy.listen(0);
+			const address = proxy.server.address() as { port: number };
+			const [status, body] = await call(address.port);
+			expect(status).toBe(200);
+			expect(body).toContain('from outside');
+			// A public keyless endpoint is not sent the free pool's key.
+			expect(seen).toEqual([{ model: 'outside-model' }]);
+			// The lane that answered is now first, ahead of the exhausted pool.
+			expect(proxy.lanes()[0]).toBe('outside/test');
+			await proxy.close();
+		});
+
+		it('keeps them through a catalogue refresh', async () => {
+			const pool = await upstreamWith(JSON.stringify({ data: [{ id: 'kilo-auto/free' }, { id: 'vendor/model:free' }] }), () => [200, '{}']);
+			const outside = await outsideWith(() => [200, '{}']);
+			const proxy = createProxy({
+				upstream: `http://127.0.0.1:${pool}`,
+				port: 0,
+				lanes: ['kilo-auto/free'],
+				extra: [{ name: 'outside/test', url: `http://127.0.0.1:${outside}/v1/chat/completions`, model: 'outside-model' }],
+			});
+			await proxy.refresh();
+			expect(proxy.lanes()).toEqual(['kilo-auto/free', 'vendor/model:free', 'outside/test']);
+			await proxy.close();
+		});
+	});
 });
+
+/** A public endpoint outside the free pool: records what it was sent, answers as told. */
+async function outsideWith(answer: () => [number, string], seen?: Array<{ model: string; auth?: string }>) {
+	const server = createServer(async (request, response) => {
+		let body = '';
+		for await (const chunk of request) body += chunk;
+		seen?.push({ model: JSON.parse(body).model, auth: request.headers.authorization });
+		const [status, text] = answer();
+		response.writeHead(status, { 'content-type': 'application/json' }).end(text);
+	});
+	await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+	servers.push(server);
+	return (server.address() as { port: number }).port;
+}

@@ -39,11 +39,47 @@ function freeLanes(ids) {
 	);
 }
 
+/**
+ * Lanes outside the free-model service: two public endpoints that answer with
+ * no account and no key. They sit behind the free pool, so they are only tried
+ * when it is out of quota, and a request they cannot serve (tools, vision) just
+ * fails over as usual. Verified by hand on 2026-11-18: OVH's endpoint answered
+ * in 1-2 s, Pollinations in about 5 s.
+ */
+export const DEFAULT_EXTERNAL = [
+	{
+		name: 'ovh/DeepSeek-V4.1-Flash-1017',
+		url: 'https://oai.endpoints.kepler.ai.cloud.ovh.net/v1/chat/completions',
+		model: 'DeepSeek-V4.1-Flash-1017',
+	},
+	{
+		name: 'ovh/Qwen3.5-397B-A17B',
+		url: 'https://oai.endpoints.kepler.ai.cloud.ovh.net/v1/chat/completions',
+		model: 'Qwen3.5-397B-A17B',
+	},
+	{
+		name: 'ovh/gpt-oss-120b',
+		url: 'https://oai.endpoints.kepler.ai.cloud.ovh.net/v1/chat/completions',
+		model: 'gpt-oss-120b',
+	},
+	{ name: 'pollinations/openai-fast', url: 'https://text.pollinations.ai/openai', model: 'openai-fast' },
+];
+
+/** A pool lane is a model name on the free-model service; an external one carries its own address. */
+function asLane(entry, upstream) {
+	if (typeof entry === 'string') return { name: entry, url: `${upstream}/v1/chat/completions`, model: entry, external: false };
+	return { name: entry.name ?? entry.model, url: entry.url, model: entry.model, key: entry.key, external: true };
+}
+
 export function createProxy(options) {
 	const upstream = (options.upstream ?? 'http://127.0.0.1:18900').replace(/\/+$/, '');
 	const keyFile = options.keyFile;
-	// A short, fixed priority: these two auto-route within their own free pools.
-	let lanes = options.lanes ?? ['kilo-auto/free', 'openrouter/free'];
+	// A short, fixed priority: these two auto-route within their own free pools,
+	// and the external lanes come after them.
+	let lanes = [
+		...(options.lanes ?? ['kilo-auto/free', 'openrouter/free']).map((lane) => asLane(lane, upstream)),
+		...(options.extra ?? []).map((lane) => asLane(lane, upstream)).filter((lane) => lane.url && lane.model),
+	];
 	let key = options.key ?? '';
 
 	const readKey = () => {
@@ -64,17 +100,21 @@ export function createProxy(options) {
 				headers: { Authorization: `Bearer ${key}` },
 				signal: AbortSignal.timeout(10_000),
 			});
-			if (!response.ok) return lanes;
+			if (!response.ok) return lanes.map((lane) => lane.name);
 			const discovered = freeLanes(unwrap(await response.text()));
 			// An empty or failed discovery must never wipe the lanes we know:
 			// that leaves the proxy with nothing to try and every call 429s.
-			if (discovered.length === 0) return lanes;
-			// Known lanes first (sticky order), then any that appeared since.
-			lanes = [...lanes.filter((id) => discovered.includes(id)), ...discovered.filter((id) => !lanes.includes(id))];
+			if (discovered.length === 0) return lanes.map((lane) => lane.name);
+			// Known lanes first (sticky order), then any that appeared since. The
+			// external lanes are not in this catalogue, so they are carried over.
+			const external = lanes.filter((lane) => lane.external);
+			const known = lanes.filter((lane) => !lane.external).map((lane) => lane.model);
+			const ordered = [...known.filter((id) => discovered.includes(id)), ...discovered.filter((id) => !known.includes(id))];
+			lanes = [...ordered.map((id) => asLane(id, upstream)), ...external];
 		} catch {
 			// No network yet: the known lanes are still worth trying.
 		}
-		return lanes;
+		return lanes.map((lane) => lane.name);
 	};
 
 	readKey();
@@ -118,13 +158,15 @@ export function createProxy(options) {
 		let last;
 		for (const lane of lanes.length > 0 ? [...lanes] : []) {
 			try {
-				const forwarded = await fetch(`${upstream}/v1/chat/completions`, {
+				const headers = { 'Content-Type': 'application/json' };
+				// The free-model service wants its own key; the external public
+				// endpoints want none, and sending one only invites a 401.
+				const token = lane.external ? lane.key : key;
+				if (token) headers.Authorization = `Bearer ${token}`;
+				const forwarded = await fetch(lane.url, {
 					method: 'POST',
-					headers: {
-						Authorization: `Bearer ${key}`,
-						'Content-Type': 'application/json',
-					},
-					body: JSON.stringify({ ...body, model: lane }),
+					headers,
+					body: JSON.stringify({ ...body, model: lane.model }),
 					signal: AbortSignal.timeout(options.timeoutMs ?? 120_000),
 				});
 				// 4xx other than a rate limit is the request's own fault: hand it back.
@@ -138,7 +180,7 @@ export function createProxy(options) {
 					continue;
 				}
 				// Success: this lane is healthy, keep it first.
-				lanes = [lane, ...lanes.filter((id) => id !== lane)];
+				lanes = [lane, ...lanes.filter((entry) => entry !== lane)];
 				const type = forwarded.headers.get('content-type') ?? 'application/json';
 				response.writeHead(forwarded.status, { 'content-type': type });
 				started = true;
@@ -187,7 +229,7 @@ export function createProxy(options) {
 
 	return {
 		server,
-		lanes: () => [...lanes],
+		lanes: () => lanes.map((lane) => lane.name),
 		refresh,
 		listen: (port = options.port ?? 18_901, host = '127.0.0.1') =>
 			new Promise((resolve) => server.listen(port, host, () => resolve(server.address()))),
@@ -198,10 +240,23 @@ export function createProxy(options) {
 // Running directly: take settings from the environment and keep refreshing.
 const invokedDirectly = process.argv[1] && import.meta.url === new URL(`file://${process.argv[1]}`).href;
 if (invokedDirectly) {
+	// The keyless endpoints outside the free pool are on unless the environment
+	// says otherwise: `OFM_EXTRA_LANES=[]` turns them off, and a JSON array of
+	// {name, url, model, key} replaces them.
+	let extra = DEFAULT_EXTERNAL;
+	if (process.env.OFM_EXTRA_LANES !== undefined) {
+		try {
+			const parsed = JSON.parse(process.env.OFM_EXTRA_LANES);
+			if (Array.isArray(parsed)) extra = parsed;
+		} catch {
+			console.error('OFM_EXTRA_LANES is not JSON; keeping the built-in external lanes');
+		}
+	}
 	const proxy = createProxy({
 		upstream: process.env.OFM_UPSTREAM,
 		port: Number(process.env.OFM_PROXY_PORT ?? 18_901),
 		keyFile: process.env.OFM_KEY_FILE,
+		extra,
 	});
 	await proxy.listen();
 	const every = Number(process.env.OFM_REFRESH_MS ?? 30 * 60_000);
