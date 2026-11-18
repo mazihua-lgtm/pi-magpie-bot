@@ -11,6 +11,10 @@
 		}
 	},
 	"dependencies": {
-		"@pi-magpie-bot/brain": "workspace:*"
+		"@pi-magpie-bot/brain": "workspace:*",
+		"qrcode": "^1.5.4"
+	},
+	"devDependencies": {
+		"@types/qrcode": "^1.5.6"
 	}
 }

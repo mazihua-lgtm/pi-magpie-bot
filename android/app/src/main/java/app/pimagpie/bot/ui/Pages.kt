@@ -43,6 +43,7 @@ import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.Key
 import androidx.compose.material.icons.outlined.Memory
 import androidx.compose.material.icons.outlined.Repeat
+import androidx.compose.material.icons.outlined.Router
 import androidx.compose.material.icons.outlined.Schedule
 import androidx.compose.material.icons.outlined.Terminal
 import androidx.compose.material3.AlertDialog
@@ -342,8 +343,10 @@ fun SettingsScreen(model: AppModel) {
 	var choosingVendor by remember { mutableStateOf(false) }
 	var showQuota by remember { mutableStateOf(false) }
 	var custom by remember { mutableStateOf(false) }
+	var pairing by remember { mutableStateOf(false) }
 	var vendor by remember { mutableStateOf<Vendor?>(null) }
 	var showLog by remember { mutableStateOf(false) }
+	val isRemote = model.api.remote.mode == app.pimagpie.bot.data.Remote.Mode.REMOTE
 	val power = remember { context.getSystemService(PowerManager::class.java) }
 	var unrestricted by remember { mutableStateOf(power.isIgnoringBatteryOptimizations(context.packageName)) }
 
@@ -358,6 +361,18 @@ fun SettingsScreen(model: AppModel) {
 						Modifier.weight(1f).clip(RoundedCornerShape(12.dp)).background(if (on) palette.raisedHigh else palette.raised).clickable { model.setTheme(mode) }.padding(vertical = 11.dp),
 						contentAlignment = Alignment.Center,
 					) { Text(label, style = MaterialTheme.typography.labelLarge.copy(color = if (on) palette.text else palette.muted)) }
+				}
+			}
+
+			SectionLabel("连接")
+			Group {
+				Item(
+					Icons.Outlined.Router,
+					"助理运行位置",
+					if (isRemote) "远程 · ${model.api.remote.label} · 点此重新配对" else "在这台手机上运行 · 点此连远程",
+				) { pairing = true }
+				if (isRemote) {
+					Item(Icons.Outlined.Repeat, "断开，回到本机", "重新在这台手机上跑助理") { model.disconnect() }
 				}
 			}
 
@@ -424,6 +439,7 @@ fun SettingsScreen(model: AppModel) {
 		}
 	}
 	if (custom) CustomProviderSheet(model) { custom = false }
+	if (pairing) PairSheet(model) { pairing = false }
 	if (showLog) {
 		AlertDialog(
 			onDismissRequest = { showLog = false },

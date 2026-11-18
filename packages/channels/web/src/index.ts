@@ -1,7 +1,9 @@
 import { createHmac, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
+import QRCode from 'qrcode';
 import type { AppBackend, AppEvent, Channel, MessageEvent, SendMeta } from '@pi-magpie-bot/brain';
 import { routeApp, SMALL_BODY } from './app-routes.ts';
+import { lanAddress, pairLink, PairStore } from './pairing.ts';
 import { LOGIN_PAGE, PAGE } from './page.ts';
 import { ICONS, MANIFEST, SERVICE_WORKER } from './pwa.ts';
 export { serveSetupPage, setupPage, type SetupPageHandle, type SetupPageOptions } from './setup.ts';
@@ -13,6 +15,8 @@ export interface WebChannelOptions {
 	host?: string;
 	/** If set, the page asks for it before anything is accepted. */
 	password?: string;
+	/** Address to put in a pairing QR (a LAN IP or a hostname). Auto-detected if absent. */
+	pairHost?: string;
 	/**
 	 * What was said in this session before, so a reopened tab is not an empty
 	 * page. Given, the transcript is what a new connection shows.
@@ -123,6 +127,8 @@ export class WebChannel implements Channel {
 	private readonly secret: Buffer;
 	/** Wrong passwords by remote address: a password is only a password if it cannot be guessed at speed. */
 	private readonly misses = new Map<string, { count: number; until: number }>();
+	/** One-time QR codes; memory-only, so a restart ends every pending pairing. */
+	private readonly pairing = new PairStore();
 	private server: ReturnType<typeof createServer> | undefined;
 	private unsubscribe: (() => void) | undefined;
 	private bound = { port: 0, url: '' };
@@ -304,6 +310,55 @@ export class WebChannel implements Channel {
 				'set-cookie',
 				`auth=${this.token(session)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=31536000`,
 			);
+			return json(response, 200, { ok: true });
+		}
+
+		// Pairing: someone already logged in makes a one-time code; the QR carries
+		// only that code, never the password. Exchanging it signs the caller's own
+		// sid, so a photo of the QR alone is worth nothing.
+		if (url.pathname === '/api/pair' && request.method === 'POST') {
+			if (!this.authorized(request, cookie)) return json(response, 401, { error: 'unauthorized' });
+			const address = lanAddress(this.options.pairHost);
+			if (!address) return json(response, 400, { error: '找不到手机能访问的局域网地址；设 PAIR_HOST 再试 / set PAIR_HOST' });
+			const { code, expiresAt } = this.pairing.create();
+			const port = this.bound.port;
+			return json(response, 200, { code, expiresAt, address, link: pairLink(address, port, code) });
+		}
+
+		if (url.pathname === '/api/pair/qr' && request.method === 'GET') {
+			if (!this.authorized(request, cookie)) return json(response, 401, { error: 'unauthorized' });
+			const code = url.searchParams.get('code') ?? '';
+			if (!/^[A-Z0-9]{4,8}$/.test(code)) return json(response, 400, { error: 'bad code' });
+			const address = lanAddress(this.options.pairHost);
+			if (!address) return json(response, 400, { error: 'no reachable address' });
+			const png = await QRCode.toBuffer(pairLink(address, this.bound.port, code), {
+				type: 'png',
+				width: 512,
+				margin: 2,
+				errorCorrectionLevel: 'M',
+			});
+			response.writeHead(200, { 'content-type': 'image/png', 'cache-control': 'no-store' });
+			response.end(png);
+			return;
+		}
+
+		if (url.pathname === '/api/pair/exchange' && request.method === 'POST') {
+			const who = request.socket.remoteAddress ?? '?';
+			if (this.pairing.throttled(who)) return json(response, 429, { error: '试得太多次，几分钟后再来 / too many tries' });
+			const body = await readJson(request);
+			const code = typeof body.code === 'string' ? body.code.trim().toUpperCase() : '';
+			const session = cookie.sid;
+			if (!/^[A-Z0-9]{4,8}$/.test(code) || !OWNER.test(session ?? '')) {
+				this.pairing.miss(who);
+				return json(response, 400, { error: '配对码不对 / bad code' });
+			}
+			if (!this.pairing.consume(code)) {
+				this.pairing.miss(who);
+				return json(response, 400, { error: '配对码过期或已经用过 / code used or expired' });
+			}
+			this.pairing.clearMiss(who);
+			// Sign the caller's own sid, exactly as /api/login would.
+			response.setHeader('set-cookie', `auth=${this.token(session!)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=31536000`);
 			return json(response, 200, { ok: true });
 		}
 

@@ -41,6 +41,20 @@ notices are carried by their own distributions.
 - Used for: the WeCom (企业微信) channel (long-connection messages and
   sending). Installed from npm, not vendored.
 
+## qrcode (node-qrcode)
+
+- Source: https://github.com/sindresorhus/qr
+- License: MIT
+- Used for: rendering the one-time pairing link as a PNG on the computer's chat
+  page. Installed from npm, not vendored.
+
+## zxing-android-embedded
+
+- Source: https://github.com/journeyapps/zxing-android-embedded
+- License: Apache-2.0
+- Used for: scanning that QR in the Android app (bundles ZXing, Apache-2.0).
+  Installed from Maven, not vendored.
+
 ## Design references (no code taken)
 
 - https://github.com/NousResearch/hermes-agent (MIT)

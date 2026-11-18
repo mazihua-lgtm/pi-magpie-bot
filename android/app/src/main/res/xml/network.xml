@@ -1,12 +1,17 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-	The chat page is served from this phone's own loopback, so that is the only
-	place plain HTTP is allowed. A link the user taps opens in the browser, and
-	that browser has its own rules.
+	Local mode talks to the assistant in this phone on loopback. Paired mode
+	talks to a machine on the same Wi-Fi, whose address is only known after the
+	QR is scanned, so it cannot be listed by domain here. Cleartext is allowed
+	globally for that reason: the server demands a password before it gives out
+	a pairing code, and the only cleartext addresses this app ever contacts are
+	the loopback one and the one the user scanned. For anything beyond a home
+	LAN, put HTTPS in front of the assistant and scan an https link instead.
 -->
 <network-security-config>
-	<domain-config cleartextTrafficPermitted="true">
-		<domain includeSubdomains="false">127.0.0.1</domain>
-		<domain includeSubdomains="false">localhost</domain>
-	</domain-config>
+	<base-config cleartextTrafficPermitted="true">
+		<trust-anchors>
+			<certificates src="system" />
+		</trust-anchors>
+	</base-config>
 </network-security-config>

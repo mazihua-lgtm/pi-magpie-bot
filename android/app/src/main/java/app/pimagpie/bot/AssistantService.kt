@@ -95,14 +95,17 @@ class AssistantService : Service() {
 	private fun work() {
 		try {
 			nameservers()
-			// Unpack only when nothing is serving: a re-unpack deletes the very
-			// directory an assistant that survived the last process is running
-			// from, and "an assistant is already answering" would then keep a
-			// limping old one alive forever while the new one never starts.
-			if (!Payload.installed(this) && !answering()) {
-				Progress.post(getString(R.string.installing), 0)
-				Payload.unpack(this) { percent -> Progress.post(getString(R.string.installing), percent) }
-				Logs.add("[app] the environment is unpacked")
+			// A phone paired to another machine needs nothing unpacked locally.
+			if (app.pimagpie.bot.data.Remote(this).base.isBlank()) {
+				// Unpack only when nothing is serving: a re-unpack deletes the very
+				// directory an assistant that survived the last process is running
+				// from, and "an assistant is already answering" would then keep a
+				// limping old one alive forever while the new one never starts.
+				if (!Payload.installed(this) && !answering()) {
+					Progress.post(getString(R.string.installing), 0)
+					Payload.unpack(this) { percent -> Progress.post(getString(R.string.installing), percent) }
+					Logs.add("[app] the environment is unpacked")
+				}
 			}
 
 			while (keepRunning) runOnce()
@@ -115,6 +118,14 @@ class AssistantService : Service() {
 	}
 
 	private fun runOnce() {
+		// Paired to another machine: no local process to run. Stay up for the
+		// watcher (notifications and approval buttons), and idle here.
+		if (app.pimagpie.bot.data.Remote(this).base.isNotBlank()) {
+			Progress.post(getString(R.string.running), -1)
+			foreground(getString(R.string.running))
+			sleep(30_000)
+			return
+		}
 		val started = System.currentTimeMillis()
 		// An assistant from a previous start may still be answering (proot survived
 		// a force-stop, or this service was restarted while it ran). Starting a
@@ -178,9 +189,12 @@ class AssistantService : Service() {
 
 	private fun listen(): Boolean {
 		val session = getSharedPreferences(PREFS, MODE_PRIVATE).getString(SESSION, null) ?: return false
-		val connection = URL("${Runner.BASE}/api/events?v=2").openConnection() as HttpURLConnection
+		val remote = app.pimagpie.bot.data.Remote(this)
+		val base = remote.base.ifBlank { Runner.BASE }
+		val cookie = listOf("sid=$session", remote.auth.ifBlank { null }).filterNotNull().joinToString("; ")
+		val connection = URL("$base/api/events?v=2").openConnection() as HttpURLConnection
 		return try {
-			connection.setRequestProperty("Cookie", "sid=$session")
+			connection.setRequestProperty("Cookie", cookie)
 			connection.setRequestProperty("Accept", "text/event-stream")
 			connection.connectTimeout = 5_000
 			connection.readTimeout = 0
@@ -356,6 +370,11 @@ class AssistantService : Service() {
 
 		fun start(context: Context) {
 			context.startForegroundService(Intent(context, AssistantService::class.java))
+		}
+
+		/** Stop the local assistant, e.g. when the phone pairs to a remote one. */
+		fun stop(context: Context) {
+			context.startService(Intent(context, AssistantService::class.java).setAction(ACTION_STOP))
 		}
 	}
 }

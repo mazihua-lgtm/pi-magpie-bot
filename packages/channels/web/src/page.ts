@@ -32,7 +32,14 @@ export const PAGE = `<!doctype html>
     :root { --surface: #121212; --surface-2: #26282b; --text: #f2f2f2; --muted: #b0b3b8; --border: #5c6066; }
   }
   body { margin: 0; font: 16px/1.6 system-ui, -apple-system, "PingFang SC", sans-serif; height: 100dvh; display: flex; flex-direction: column; background: var(--surface); color: var(--text); }
-  header { padding: 12px 16px; padding-top: max(12px, env(safe-area-inset-top)); border-bottom: 1px solid var(--border); font-weight: 600; }
+  header { padding: 12px 16px; padding-top: max(12px, env(safe-area-inset-top)); border-bottom: 1px solid var(--border); font-weight: 600; display: flex; align-items: center; gap: 12px; }
+  header .title { flex: 1; }
+  header button { font-size: 13px; font-weight: 500; padding: 7px 12px; }
+  .pair-backdrop { position: fixed; inset: 0; background: #000a; display: grid; place-items: center; z-index: 10; padding: 20px; }
+  .pair-card { background: var(--surface); color: var(--text); border: 1px solid var(--border); border-radius: 16px; padding: 24px; display: flex; flex-direction: column; align-items: center; gap: 12px; width: min(22rem, 90vw); text-align: center; }
+  .pair-card img { width: 220px; height: 220px; image-rendering: pixelated; }
+  .pair-code { font-size: 26px; font-weight: 700; letter-spacing: .18em; }
+  .pair-note { font-size: 13px; opacity: .7; }
   #log { flex: 1; overflow-y: auto; padding: 16px; display: flex; flex-direction: column; gap: 10px; }
   .msg { max-width: 44rem; padding: 10px 14px; border-radius: 16px; white-space: pre-wrap; word-break: break-word; }
   .me { align-self: flex-end; background: var(--brand); color: #fff; }
@@ -51,7 +58,7 @@ export const PAGE = `<!doctype html>
   button { font: inherit; padding: 0 18px; border-radius: 12px; border: 0; background: var(--brand); color: #fff; }
   button:disabled { opacity: .5; }
 </style>
-<header>喜鹊</header>
+<header><span class="title">喜鹊</span><button type="button" id="pair-btn">配对手机</button></header>
 <div id="log" role="log" aria-live="polite" aria-label="对话"></div>
 <form id="form">
   <textarea id="text" rows="1" aria-label="给助理发消息" enterkeyhint="send"
@@ -249,6 +256,45 @@ export const PAGE = `<!doctype html>
   text.addEventListener('input', () => {
     text.style.height = 'auto';
     text.style.height = text.scrollHeight + 'px';
+  });
+
+  // Pair a phone: the QR carries a one-time code, never the password. The
+  // phone swaps the code for its own signed session; the code dies on first use.
+  const pairBtn = document.getElementById('pair-btn');
+  pairBtn.addEventListener('click', async () => {
+    pairBtn.disabled = true;
+    pairBtn.textContent = '生成中…';
+    try {
+      const response = await fetch('/api/pair', { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || '配对失败');
+      const back = document.createElement('div');
+      back.className = 'pair-backdrop';
+      const card = document.createElement('div');
+      card.className = 'pair-card';
+      const img = document.createElement('img');
+      img.alt = '配对二维码';
+      img.src = '/api/pair/qr?code=' + encodeURIComponent(data.code) + '&t=' + Date.now();
+      const code = document.createElement('div');
+      code.className = 'pair-code';
+      code.textContent = data.code;
+      const note = document.createElement('p');
+      note.className = 'pair-note';
+      note.textContent = '用喜鹊 App 扫一扫，或手输这个码。' + data.address + ' · 5 分钟内有效，用一次即失效。';
+      const close = document.createElement('button');
+      close.type = 'button';
+      close.textContent = '关闭';
+      close.onclick = () => back.remove();
+      card.append(img, code, note, close);
+      back.appendChild(card);
+      back.onclick = (e) => { if (e.target === back) back.remove(); };
+      document.body.appendChild(back);
+    } catch (error) {
+      pairBtn.textContent = error.message || '配对失败';
+      setTimeout(() => { pairBtn.textContent = '配对手机'; }, 2500);
+    } finally {
+      pairBtn.disabled = false;
+    }
   });
 </script>
 </html>`;

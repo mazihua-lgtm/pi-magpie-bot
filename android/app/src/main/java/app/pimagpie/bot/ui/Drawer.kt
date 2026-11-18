@@ -130,7 +130,14 @@ fun Drawer(model: AppModel, close: () -> Unit) {
 				Row(verticalAlignment = Alignment.CenterVertically) {
 					Box(Modifier.size(6.dp).clip(CircleShape).background(if (model.connected) palette.live else palette.faint))
 					Spacer(Modifier.width(6.dp))
-					Text(if (model.connected) "在这台手机上运行" else "连接中", style = MaterialTheme.typography.bodySmall.copy(color = palette.muted))
+					Text(
+						when {
+							!model.connected -> "连接中"
+							model.api.remote.mode == app.pimagpie.bot.data.Remote.Mode.REMOTE -> "连接到 ${model.api.remote.label}"
+							else -> "在这台手机上运行"
+						},
+						style = MaterialTheme.typography.bodySmall.copy(color = palette.muted),
+					)
 				}
 			}
 			Icon(Icons.Outlined.Settings, "设置", tint = palette.muted)

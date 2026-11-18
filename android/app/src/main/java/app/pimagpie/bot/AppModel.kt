@@ -119,26 +119,71 @@ class AppModel(application: Application) : AndroidViewModel(application) {
 		if (!firstRun) start()
 	}
 
-	/** Unpack if needed, start the service, and wait until the process answers. */
+	/**
+	 * Bring up whichever assistant this phone is pointed at. Local: unpack if
+	 * needed and start the service. Remote: no local process at all, just wait
+	 * for the paired machine to answer.
+	 */
 	fun start() {
 		val state = boot
 		if (state is Boot.Preparing) boot = state.copy(failed = false, line = if (Progress.failed) "" else state.line)
 		Progress.failed = false
-		AssistantService.start(getApplication())
+		val remote = api.remote.mode == app.pimagpie.bot.data.Remote.Mode.REMOTE
+		if (!remote) AssistantService.start(getApplication())
 		viewModelScope.launch {
-			// Ten minutes is a slow first run on an old phone.
-			repeat(600) {
+			// A slow first run on an old phone can take minutes; a remote machine
+			// either answers within seconds or is not worth waiting on for long.
+			repeat(if (remote) 30 else 600) {
 				val health = api.health()
 				if (health != null) {
 					if (health.optBoolean("ok", true)) ready() else needsKey()
 					return@launch
 				}
-				if (Progress.failed) return@launch
+				if (!remote && Progress.failed) return@launch
 				delay(1_000)
 			}
 			val now = boot
 			if (now is Boot.Preparing) boot = now.copy(failed = true, line = getApplication<Application>().getString(R.string.setup_timeout))
 		}
+	}
+
+	/** Trade a scanned QR for a signed session, then connect to that machine. */
+	fun pair(link: String, done: (String?) -> Unit) {
+		val scanned = app.pimagpie.bot.data.Remote.parse(link)
+		if (scanned == null) {
+			done("这个码看不懂，应是 http://地址:端口/pair/码")
+			return
+		}
+		val code = scanned.code
+		if (code == null) {
+			done("这是地址，不是配对码：请扫电脑上的二维码，或把 /pair/码 一起贴上")
+			return
+		}
+		viewModelScope.launch {
+			try {
+				val auth = api.exchange(scanned.base, code)
+				api.remote.auth = auth
+				api.remote.base = scanned.base
+				AssistantService.stop(getApplication())
+				// Reconnect from the top on the new address.
+				boot = Boot.Preparing(false, "", -1, false)
+				connected = false
+				start()
+				done(null)
+			} catch (error: Exception) {
+				done(error.message ?: "没配上")
+			}
+		}
+	}
+
+	/** Forget the paired machine and go back to the assistant in this phone. */
+	fun disconnect(done: (() -> Unit)? = null) {
+		api.remote.disconnect()
+		AssistantService.stop(getApplication())
+		boot = Boot.Preparing(firstRun, "", -1, false)
+		connected = false
+		start()
+		done?.invoke()
 	}
 
 	private suspend fun needsKey() {

@@ -21,8 +21,8 @@ android {
 		// written when it last unpacked, and re-unpacks when they differ. Without
 		// that, an updated APK keeps running the old node, magpie and bot code,
 		// and an update looks like it did nothing.
-		versionCode = 7
-		versionName = "0.3.1"
+		versionCode = 8
+		versionName = "0.4.0"
 		// The environment inside is linux-arm64: one payload, so one kind of phone.
 		ndk { abiFilters += listOf("arm64-v8a") }
 	}
@@ -88,6 +88,10 @@ dependencies {
 	implementation("androidx.core:core-ktx:1.15.0")
 	implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
 	debugImplementation("androidx.compose.ui:ui-tooling")
+
+	// QR scan for pairing to an assistant on another machine. Bundles its own
+	// capture activity, so a phone without GMS (common here) still works.
+	implementation("com.journeyapps:zxing-android-embedded:4.3.0")
 
 	// The two pieces of phone-side logic that broke once: the reconnect wait and
 	// the shade's notification ids. Both are plain Kotlin, so they are tested here

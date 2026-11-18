@@ -1,12 +1,15 @@
 # 原生 App 接口 / Native app API
 
-The Android app (`android/`) is a native Jetpack Compose client. It talks to the bot process
-on the same phone over `http://127.0.0.1:8787`, served by the web channel
+The Android app (`android/`) is a native Jetpack Compose client. In local mode it talks to the
+bot process on the same phone over `http://127.0.0.1:8787`; after pairing it talks to a bot on
+another machine over that machine's address. Both are served by the web channel
 (`packages/channels/web`). The old HTML page and its `/api/message` + `/api/events` stay as
 they are for browsers; everything below is additive.
 
-Every request carries `Cookie: sid=<uuid>`. The app makes that uuid itself once and keeps it,
-so one phone is one owner; the server takes a sid it has never seen from the first request on.
+Every request carries `Cookie: sid=<uuid>`. When the server has `WEB_PASSWORD` set, a paired
+phone also sends `auth=<hmac>` in the same cookie header; see Pairing below. The app makes its
+sid once and keeps it, so one phone is one owner; the server takes a sid it has never seen from
+the first request on.
 A sid is 8 to 64 of `A-Z a-z 0-9 - _` (a UUID is fine); anything else gets 400. All bodies are
 JSON, and every POST, PUT and PATCH says `Content-Type: application/json` even when it has no
 body (send `{}`): without it the answer is 415, which is what keeps a foreign web page from
@@ -142,6 +145,29 @@ The process exits with code 0 right after the answer is sent; expect the connect
 `/healthz` to fail for a few seconds. Where this machine cannot add keys (the gateway runs
 elsewhere, or the page is reachable from other machines without a password) the answer is 501.
 `POST /api/setup/key` takes the same two shapes for the case where there is no model at all.
+
+## Pairing (phone to a remote assistant)
+
+The phone can connect to a bot on another machine instead of running one locally. The QR never
+carries the password: it carries a one-time code made by someone already logged in.
+
+| Method | Path | Auth | Result |
+| --- | --- | --- | --- |
+| POST | `/api/pair` | logged-in cookie | `{ code, link, address, expiresAt }`; code is 6 chars, 5-minute life |
+| GET | `/api/pair/qr?code=<code>` | logged-in cookie | PNG of the link; `image/png` |
+| POST | `/api/pair/exchange` `{ code }` | any valid `sid` | `Set-Cookie: auth=<hmac(sid)>`, `{ ok: true }` |
+
+The flow: a browser logged into the computer's page calls `/api/pair`, shows the QR; the phone
+scans `http://<address>:<port>/pair/<code>`, then POSTs that code to `/api/pair/exchange` with
+**its own** sid. The returned `auth` is an HMAC of that sid with the server's persisted cookie
+secret, exactly as `/api/login` would issue — so the phone's auth is bound to the phone's sid,
+not the owner's. Every later request sends `Cookie: sid=<phone>; auth=<hmac>`. The code is
+destroyed on first use, expires in five minutes, and all pending codes die on a server restart
+(they are memory-only). Failed exchanges are rate-limited like password guesses.
+
+`address` comes from `PAIR_HOST` when set, otherwise the first non-loopback private IPv4; if
+there is none, `/api/pair` answers 400 and says to set `PAIR_HOST`. Plain HTTP is intended for
+a home LAN; put HTTPS in front of the assistant for anything else and scan an https link.
 
 ## Setup mode
 

@@ -26,9 +26,12 @@ class ApprovalReceiver : BroadcastReceiver() {
 					Logs.add("[app] could not answer an approval: no session")
 					-1
 				} else {
-					val connection = java.net.URL("${Runner.BASE}/api/approvals/$id").openConnection() as java.net.HttpURLConnection
+					val remote = app.pimagpie.bot.data.Remote(context)
+					val base = remote.base.ifBlank { Runner.BASE }
+					val cookie = listOf("sid=$session", remote.auth.ifBlank { null }).filterNotNull().joinToString("; ")
+					val connection = java.net.URL("$base/api/approvals/$id").openConnection() as java.net.HttpURLConnection
 					connection.requestMethod = "POST"
-					connection.setRequestProperty("Cookie", "sid=$session")
+					connection.setRequestProperty("Cookie", cookie)
 					connection.setRequestProperty("Content-Type", "application/json; charset=utf-8")
 					connection.connectTimeout = 5_000
 					connection.readTimeout = 10_000

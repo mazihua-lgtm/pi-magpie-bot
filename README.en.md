@@ -77,6 +77,10 @@ feel like apps such as Grok:
   home - if it speaks the OpenAI API, a name, a URL, the model names and a key put it in the model
   list (magpie requires a key even where an endpoint does not; use a one-word placeholder there).
   Nothing has to be on a list we keep.
+- **Drive an assistant on your computer**: pair the phone to a 喜鹊 on another machine so the
+  assistant stays on around the clock with the big models, while the phone just chats. On the
+  computer's page press "Pair phone", scan with the phone, and you are in. Both on the same WiFi.
+  See "Pair a remote assistant" below.
 - **Voice input**, and dark, light or system theme.
 
 The first launch prepares the environment on the phone (about 300 MB, a few minutes); after that it
@@ -273,6 +277,27 @@ To run magpie in its own container (for example several bots sharing one gateway
 > it; bring a key or a local model. The container needs to reach github.com to fetch magpie; if it
 > cannot, the log says so and the bot falls back to the page above.
 
+## Pair a remote assistant
+
+The phone does not have to run a model itself: it can connect to a 喜鹊 on another computer or
+server, so the assistant stays on around the clock with the big models while the phone just
+chats. Run that machine's assistant as under Cloud or Quick start, **set `WEB_PASSWORD` and let it
+listen on the LAN** (`WEB_HOST=0.0.0.0`; under Docker, `WEB_BIND=0.0.0.0`). Then:
+
+1. Open the assistant's web page on the computer, log in, press "Pair phone" at the top right.
+2. A QR and a 6-character code appear (five minutes, one use).
+3. In the phone's 喜鹊: Settings → "Assistant runs on" → scan the code; no camera, paste the link.
+4. Once connected, the drawer says "Connected to <address>". Chats, memory, reminders and
+   approvals all go to the remote machine; Settings has "Disconnect, use this phone" any time.
+
+**The QR carries no password**, only a one-time code; the phone trades it for a credential bound
+to its own identity, so a photograph of the QR is worthless. Both devices need the same WiFi.
+This first version pairs one phone to one assistant; codes die on a server restart. If the
+auto-detected LAN address is wrong, set `PAIR_HOST=` in `.env` to the address the phone can reach.
+
+For a phone on the internet or another network, put HTTPS or a reverse proxy in front of the
+assistant and scan an https link; plain HTTP is for a home LAN. See **[docs/app-api.md](docs/app-api.md)**.
+
 ## What it does
 
 | What | How you ask | Under the hood |
@@ -305,6 +330,7 @@ To run magpie in its own container (for example several bots sharing one gateway
 | `WEB_PORT` / `WEB_HOST` | `8787` / `127.0.0.1` | the chat page; `WEB_PORT=0` turns it off |
 | `WEB_PASSWORD` | empty | set it and the page asks for it |
 | `WEB_BIND` | `127.0.0.1` | compose only: the address the web port is published on |
+| `PAIR_HOST` | empty | address in the pairing QR; auto-detected from the LAN, set it when that is wrong |
 | `TELEGRAM_BOT_TOKEN` | empty | set it and Telegram is connected |
 | `FEISHU_APP_ID` / `FEISHU_APP_SECRET` | empty | set both and Feishu is connected |
 | `FEISHU_DOMAIN` | `feishu` | `lark` for international Lark |
@@ -372,7 +398,7 @@ yours; monetising them would kill the thing.
 For now there is one job: make it free, good, and effortless, and let installs grow
 on their own. The ways it can eventually pay for itself come later, not before:
 
-- **Assistant that drives your own machine** (next): point the phone at your own
+- **Assistant that drives your own machine** (done): pair the phone with your own
   computer or server so it stays on around the clock. Free.
 - **Hosted tier** (when asked): for people who would rather not run it themselves —
   we keep the service up, back up memories and reminders, and charge monthly for

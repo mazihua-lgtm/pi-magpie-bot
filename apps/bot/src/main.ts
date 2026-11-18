@@ -444,6 +444,8 @@ if (!webDisabled) {
 		port: Number(env.WEB_PORT ?? 8787),
 		host: webHost,
 		password: env.WEB_PASSWORD,
+		// The QR for phone pairing names this address; auto-detected if unset.
+		pairHost: env.PAIR_HOST,
 		// Kept in the host tables: a secret that only lives in memory signs every
 		// phone out at every restart, update or reboot.
 		secret: {

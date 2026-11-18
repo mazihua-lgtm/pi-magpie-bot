@@ -4,7 +4,7 @@ import { WebChannel } from '../src/index.ts';
 
 const servers: WebChannel[] = [];
 
-const start = async (options: { password?: string; secret?: { get(): string | undefined; set(value: string): void }; history?: (target: string) => Promise<Array<{ role: 'me' | 'bot'; text: string }>> } = {}) => {
+const start = async (options: { password?: string; pairHost?: string; secret?: { get(): string | undefined; set(value: string): void }; history?: (target: string) => Promise<Array<{ role: 'me' | 'bot'; text: string }>> } = {}) => {
 	const messages: { target: string; text: string }[] = [];
 	const channel = new WebChannel({
 		port: 0,
@@ -228,6 +228,108 @@ describe('web channel', () => {
 		});
 		expect(accepted.status).toBe(202);
 		expect(messages).toHaveLength(1);
+	});
+});
+
+describe('pairing a phone', () => {
+	/** Log in as the owner and return the sid+auth cookie pair. */
+	const login = async (url: string) => {
+		const page = await fetch(`${url}/`);
+		const sid = (page.headers.get('set-cookie') ?? '').split(';')[0];
+		const good = await fetch(`${url}/api/login`, {
+			method: 'POST',
+			headers: { 'content-type': 'application/json', cookie: sid },
+			body: JSON.stringify({ password: 'hunter2' }),
+		});
+		const auth = (good.headers.get('set-cookie') ?? '').split(';')[0];
+		return { sid, auth, cookie: `${sid}; ${auth}` };
+	};
+
+	it('needs a login to make a code, and the QR is a PNG', async () => {
+		const { url } = await start({ password: 'hunter2', pairHost: '192.168.1.9' });
+
+		const locked = await fetch(`${url}/api/pair`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' });
+		expect(locked.status).toBe(401);
+
+		const owner = await login(url);
+		const made = await fetch(`${url}/api/pair`, { method: 'POST', headers: { 'content-type': 'application/json', cookie: owner.cookie }, body: '{}' });
+		expect(made.status).toBe(200);
+		const data = (await made.json()) as { code: string; link: string; address: string; expiresAt: number };
+		expect(data.code).toMatch(/^[A-Z0-9]{6}$/);
+		expect(data.address).toBe('192.168.1.9');
+		expect(data.link).toBe(`http://192.168.1.9:${new URL(url).port}/pair/${data.code}`);
+		expect(data.expiresAt).toBeGreaterThan(Date.now());
+
+		const qr = await fetch(`${url}/api/pair/qr?code=${data.code}`, { headers: { cookie: owner.cookie } });
+		expect(qr.status).toBe(200);
+		expect(qr.headers.get('content-type')).toContain('image/png');
+		const bytes = new Uint8Array(await qr.arrayBuffer());
+		expect(Array.from(bytes.slice(0, 4))).toEqual([137, 80, 78, 71]); // PNG magic
+	});
+
+	it('exchanges a code once, signs the caller own sid, and never twice', async () => {
+		const { url, messages } = await start({ password: 'hunter2', pairHost: '192.168.1.9' });
+		const owner = await login(url);
+		const made = await fetch(`${url}/api/pair`, { method: 'POST', headers: { 'content-type': 'application/json', cookie: owner.cookie }, body: '{}' });
+		const { code } = (await made.json()) as { code: string };
+
+		// The phone has its own sid; exchanging must sign that one, not the owner's.
+		const phoneSid = 'phone-session-0001';
+		const exchange = await fetch(`${url}/api/pair/exchange`, {
+			method: 'POST',
+			headers: { 'content-type': 'application/json', cookie: `sid=${phoneSid}` },
+			body: JSON.stringify({ code }),
+		});
+		expect(exchange.status).toBe(200);
+		const phoneAuth = (exchange.headers.get('set-cookie') ?? '').split(';')[0];
+		expect(phoneAuth).toMatch(/^auth=/);
+		expect(phoneAuth).not.toBe(owner.auth);
+
+		// The signed phone session can reach an authenticated route; without the
+		// auth cookie the same route is refused.
+		const ok = await fetch(`${url}/api/message`, {
+			method: 'POST',
+			headers: { 'content-type': 'application/json', cookie: `sid=${phoneSid}; ${phoneAuth}` },
+			body: JSON.stringify({ text: 'hi' }),
+		});
+		expect(ok.status).toBe(202);
+		const noAuth = await fetch(`${url}/api/message`, {
+			method: 'POST',
+			headers: { 'content-type': 'application/json', cookie: `sid=${phoneSid}` },
+			body: JSON.stringify({ text: 'hi' }),
+		});
+		expect(noAuth.status).toBe(401);
+		expect(messages).toHaveLength(1);
+
+		// The same code is now dead.
+		const again = await fetch(`${url}/api/pair/exchange`, {
+			method: 'POST',
+			headers: { 'content-type': 'application/json', cookie: `sid=${phoneSid}` },
+			body: JSON.stringify({ code }),
+		});
+		expect(again.status).toBe(400);
+		expect(((await again.json()) as { error: string }).error).toContain('code');
+	});
+
+	it('parses the code case-insensitively and rejects junk', async () => {
+		const { url } = await start({ password: 'hunter2', pairHost: '192.168.1.9' });
+		const owner = await login(url);
+		const made = await fetch(`${url}/api/pair`, { method: 'POST', headers: { 'content-type': 'application/json', cookie: owner.cookie }, body: '{}' });
+		const { code } = (await made.json()) as { code: string };
+
+		const junk = await fetch(`${url}/api/pair/exchange`, {
+			method: 'POST',
+			headers: { 'content-type': 'application/json', cookie: 'sid=phone-session-0002' },
+			body: JSON.stringify({ code: 'bad!' }),
+		});
+		expect(junk.status).toBe(400);
+
+		const lower = await fetch(`${url}/api/pair/exchange`, {
+			method: 'POST',
+			headers: { 'content-type': 'application/json', cookie: 'sid=phone-session-0002' },
+			body: JSON.stringify({ code: code.toLowerCase() }),
+		});
+		expect(lower.status).toBe(200);
 	});
 });
 

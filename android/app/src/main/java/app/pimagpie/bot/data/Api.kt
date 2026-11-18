@@ -35,10 +35,19 @@ sealed interface Event {
  */
 class Api(context: Context) {
 	private val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+	val remote = Remote(context)
 
 	val session: String = prefs.getString(SESSION, null) ?: UUID.randomUUID().toString().also {
 		prefs.edit().putString(SESSION, it).apply()
 	}
+
+	/** The base this app currently speaks to: local proot, or a paired machine. */
+	private val base: String
+		get() = remote.base.ifBlank { Runner.BASE }
+
+	/** Cookies every request carries. Remote sessions add the signed auth. */
+	private val cookies: String
+		get() = listOf("sid=$session", remote.auth.ifBlank { null }).filterNotNull().joinToString("; ")
 
 	/** What `/healthz` says: null when nothing answers yet. */
 	suspend fun health(): JSONObject? = withContext(Dispatchers.IO) {
@@ -233,12 +242,45 @@ class Api(context: Context) {
 		}
 
 	private fun open(path: String, timeout: Int): HttpURLConnection {
-		val connection = URL("${Runner.BASE}$path").openConnection() as HttpURLConnection
+		val connection = URL("$base$path").openConnection() as HttpURLConnection
 		connection.connectTimeout = timeout
 		connection.readTimeout = timeout
-		connection.setRequestProperty("Cookie", "sid=$session")
+		connection.setRequestProperty("Cookie", cookies)
 		connection.useCaches = false
 		return connection
+	}
+
+	/**
+	 * Trade a one-time QR code for this session's signed auth cookie. Done
+	 * against the address in the scanned link before we switch `base` over, so
+	 * a bad code never leaves the app pointed somewhere new.
+	 */
+	suspend fun exchange(baseUrl: String, code: String): String = withContext(Dispatchers.IO) {
+		val connection = URL("${baseUrl.trim().trimEnd('/')}/api/pair/exchange").openConnection() as HttpURLConnection
+		connection.requestMethod = "POST"
+		connection.connectTimeout = 8_000
+		connection.readTimeout = 20_000
+		connection.setRequestProperty("Content-Type", "application/json; charset=utf-8")
+		connection.setRequestProperty("Cookie", "sid=$session")
+		connection.doOutput = true
+		try {
+			connection.outputStream.use { it.write(JSONObject().put("code", code).toString().toByteArray()) }
+			val status = connection.responseCode
+			val stream = if (status < 400) connection.inputStream else connection.errorStream
+			val text = stream?.bufferedReader()?.readText().orEmpty()
+			if (status >= 400) {
+				val said = runCatching { JSONObject(text).optString("error") }.getOrDefault("")
+				throw ApiError(status, said.ifBlank { "配对失败（$status）" })
+			}
+			// HttpURLConnection hides Set-Cookie headers it thinks are sensitive,
+			// but `auth` is ours and readable through the multi-value accessor.
+			val setCookie = connection.headerFields["Set-Cookie"].orEmpty()
+			val auth = setCookie.map { it.substringBefore(';').trim() }.firstOrNull { it.startsWith("auth=", ignoreCase = true) }
+				?: throw ApiError(500, "服务器没有回传登录凭据 / no auth cookie")
+			auth
+		} finally {
+			connection.disconnect()
+		}
 	}
 
 	private fun path(segment: String): String = URLEncoder.encode(segment, "UTF-8").replace("+", "%20")
