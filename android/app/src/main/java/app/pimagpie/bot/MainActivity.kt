@@ -36,14 +36,18 @@ import androidx.compose.material3.rememberDrawerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.unit.dp
 import androidx.core.view.WindowCompat
+import androidx.compose.runtime.saveable.rememberSaveable
 import app.pimagpie.bot.ui.AppTheme
 import app.pimagpie.bot.ui.BootScreen
 import app.pimagpie.bot.ui.ChatScreen
@@ -52,6 +56,7 @@ import app.pimagpie.bot.ui.KeyScreen
 import app.pimagpie.bot.ui.LocalPalette
 import app.pimagpie.bot.ui.MemoryScreen
 import app.pimagpie.bot.ui.SettingsScreen
+import app.pimagpie.bot.ui.Splash
 import app.pimagpie.bot.ui.TasksScreen
 import kotlinx.coroutines.launch
 
@@ -136,6 +141,7 @@ private fun Root(model: AppModel) {
 		}
 	}
 	val snackbar = remember { SnackbarHostState() }
+	var splash by rememberSaveable { mutableStateOf(true) }
 	LaunchedEffect(Unit) {
 		model.toasts.collect {
 			snackbar.currentSnackbarData?.dismiss()
@@ -161,6 +167,9 @@ private fun Root(model: AppModel) {
 		SnackbarHost(snackbar, Modifier.align(Alignment.BottomCenter).navigationBarsPadding().imePadding().padding(start = 16.dp, end = 16.dp, bottom = 96.dp)) {
 			Snackbar(shape = RoundedCornerShape(14.dp), containerColor = palette.ink, contentColor = palette.onInk) { Text(it.visuals.message) }
 		}
+		// Cold start only: the splash sits above the real screen and fades out
+		// onto it, so there is no black gap between the two.
+		if (splash) Splash { splash = false }
 	}
 }
 
