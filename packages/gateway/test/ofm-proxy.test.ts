@@ -159,6 +159,25 @@ describe('the free-model proxy', () => {
 			await proxy.close();
 		});
 
+		it('answers from a public endpoint with no pool lanes and a dead upstream (local service failed)', async () => {
+			// Nothing listens here: the bundled local service could not start.
+			const deadUpstream = 'http://127.0.0.1:1';
+			const outside = await outsideWith(() => [200, JSON.stringify({ id: 'x', choices: [{ message: { content: 'public answer' } }] })]);
+			const proxy = createProxy({
+				upstream: deadUpstream,
+				port: 0,
+				lanes: [], // external-only fallback
+				extra: [{ name: 'public/test', url: `http://127.0.0.1:${outside}/v1/chat/completions`, model: 'public-model' }],
+			});
+			await proxy.listen(0);
+			const address = proxy.server.address() as { port: number };
+			const [status, body] = await call(address.port);
+			expect(status).toBe(200);
+			expect(body).toContain('public answer');
+			expect(proxy.lanes()).toEqual(['public/test']);
+			await proxy.close();
+		});
+
 		it('keeps them through a catalogue refresh', async () => {
 			const pool = await upstreamWith(JSON.stringify({ data: [{ id: 'kilo-auto/free' }, { id: 'vendor/model:free' }] }), () => [200, '{}']);
 			const outside = await outsideWith(() => [200, '{}']);

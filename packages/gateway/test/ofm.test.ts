@@ -97,20 +97,41 @@ describe('the free-model route', () => {
 		expect(lines.some((line) => line.startsWith('provider add'))).toBe(false);
 	});
 
-	it('gives up cleanly when the service has no key yet', async () => {
+	it('still registers the proxy when the service has no key yet (external lanes work without one)', async () => {
 		const dir = await tempDir();
 		const port = portBase + 2;
 		const proxyPort = portBase + 22;
 		await fakeUp(port);
 		await fakeUp(proxyPort, true);
-		const { fake } = await fakeCli(dir, false);
+		const { fake, calls } = await fakeCli(dir, false);
 		const sourceDir = join(dir, 'source');
 		const dataDir = join(dir, 'empty');
 		await mkdir(dataDir, { recursive: true });
 
+		const ok = await ensureOfmRoute({ binary: fake, sourceDir, dataDir, port, proxyPort, log: () => {} });
+		expect(ok).toBe(true);
+		// A keyless placeholder is used: the proxy needs only a non-empty key
+		// from magpie, and the public endpoints need none of their own.
+		const lines = (await readFile(calls, 'utf8')).trim().split('\n');
+		expect(lines.find((line) => line.startsWith('provider add ofm '))).toContain('key=public-endpoints');
+	});
+
+	it('falls back to public endpoints when the local free service cannot start at all', async () => {
+		const dir = await tempDir();
+		const port = portBase + 3;
+		const proxyPort = portBase + 23;
+		// No fakeUp(port): the local service is down. Proxy is up with the stable model.
+		await fakeUp(proxyPort, true);
+		const { fake, calls } = await fakeCli(dir, false);
+		const sourceDir = join(dir, 'source'); // empty: no cli.mjs to spawn
+		const dataDir = join(dir, 'ofm-data');
+		await mkdir(dataDir, { recursive: true });
+
 		const logged: string[] = [];
 		const ok = await ensureOfmRoute({ binary: fake, sourceDir, dataDir, port, proxyPort, log: (line) => logged.push(line) });
-		expect(ok).toBe(false);
-		expect(logged.join('\n')).toContain('no key');
+		expect(ok).toBe(true);
+		expect(logged.join('\n')).toContain('public endpoints only');
+		const lines = (await readFile(calls, 'utf8')).trim().split('\n');
+		expect(lines.find((line) => line.startsWith('provider add ofm '))).toContain(`url=http://127.0.0.1:${proxyPort}/v1`);
 	});
 });

@@ -36,8 +36,10 @@ else's server and you pay monthly for them. This project hands you the same piec
 
 - **Free to use.** The free pool comes from [our-free-model](https://github.com/Ebony-Vinyl/dsh-our-free-model),
   installed and signed in on the first start, with two more account-free public endpoints (OVH,
-  Pollinations) behind it that it fails over to on a 429. Want more stability or a bigger model?
-  Swap in your own key or your own endpoint — it is one model name.
+  Pollinations) behind it that it fails over to on a 429. Even if the local free service fails to
+  start, it falls back to just those public endpoints — one broken component never leaves you
+  unable to chat. Want more stability or a bigger model? Swap in your own key or your own endpoint
+  — it is one model name.
 - **Your records stay yours.** Conversations, memories and schedules are local SQLite and Markdown
   files — on the phone, or on your own machine. Copy the folder and you have migrated (what the
   model sees is covered under Privacy below).

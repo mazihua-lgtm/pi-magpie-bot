@@ -95,7 +95,7 @@ function readKey(dataDir: string): string | undefined {
  * Start the failover proxy in front of the service. It offers one stable model
  * and hides the per-lane quota errors that make a gateway lock a provider.
  */
-async function ensureProxy(options: OfmRouteOptions, upstreamPort: number, node: string): Promise<string | undefined> {
+async function ensureProxy(options: OfmRouteOptions, upstreamPort: number, node: string, externalOnly = false): Promise<string | undefined> {
 	const proxyPort = options.proxyPort ?? OFM_PROXY_PORT;
 	const base = `http://127.0.0.1:${proxyPort}`;
 	if (await proxyIsOurs(base)) return base; // our proxy is already up
@@ -114,6 +114,9 @@ async function ensureProxy(options: OfmRouteOptions, upstreamPort: number, node:
 			OFM_UPSTREAM: `http://127.0.0.1:${upstreamPort}`,
 			OFM_PROXY_PORT: String(proxyPort),
 			OFM_KEY_FILE: join(options.dataDir, 'settings.json'),
+			// With no local service, skip the pool lanes and use only the keyless
+			// public endpoints, so a dead upstream cannot slow every request.
+			OFM_POOL_LANES: externalOnly ? '[]' : undefined,
 			NO_PROXY: '*',
 			no_proxy: '*',
 		},
@@ -157,56 +160,70 @@ export async function ensureOfmRoute(options: OfmRouteOptions): Promise<boolean>
 	const port = options.port ?? OFM_PORT;
 	const base = `http://127.0.0.1:${port}`;
 
-	if (!await gatewayUp(base)) {
+	// Whether the local free service answered. When it does not, the proxy can
+	// still run on the keyless public endpoints (OVH, Pollinations) — a phone
+	// whose bundled service fails to start should still be able to chat free.
+	let poolUp = Boolean(await gatewayUp(base));
+	if (!poolUp) {
 		const cli = join(options.sourceDir, 'packages', 'standalone', 'cli.mjs');
 		if (!existsSync(cli)) {
-			log(`the free-model service is not bundled at ${cli}`);
-			return false;
-		}
-		const node = options.node ?? process.execPath;
-		const env: NodeJS.ProcessEnv = {
-			...cleanEnv(),
-			// The default lane wants Bun; a phone has only this node.
-			OUR_FREE_MODEL_FREE_TRANSPORT: 'node',
-			NO_PROXY: '*',
-			no_proxy: '*',
-		};
-		// A child of this process, not detached: a restart or force-stop takes
-		// it with it, so an old instance never holds the port with stale state.
-		spawn(node, [cli, '--port', String(port), '--data-dir', options.dataDir], {
-			stdio: 'ignore',
-			env,
-		})
-			.on('error', (error) => log(`the free-model service could not start: ${error.message}`))
-			.on('exit', (code, signal) => {
-				if (code === 0 || signal === 'SIGTERM') return;
-				log(`the free-model service exited (${signal ?? code}); free models are down until restart`);
+			log(`the free-model service is not bundled at ${cli}; trying the public endpoints only`);
+		} else {
+			const node = options.node ?? process.execPath;
+			const env: NodeJS.ProcessEnv = {
+				...cleanEnv(),
+				// The default lane wants Bun; a phone has only this node.
+				OUR_FREE_MODEL_FREE_TRANSPORT: 'node',
+				NO_PROXY: '*',
+				no_proxy: '*',
+			};
+			// A child of this process, not detached: a restart or force-stop takes
+			// it with it, so an old instance never holds the port with stale state.
+			// Keep its stderr: with `ignore` a crash only said "exited (1)" and the
+			// actual reason was lost, useless on a phone with no console.
+			let complaints = '';
+			const child = spawn(node, [cli, '--port', String(port), '--data-dir', options.dataDir], {
+				stdio: ['ignore', 'ignore', 'pipe'],
+				env,
 			});
-		log('starting the free-model service');
+			child.stderr?.setEncoding('utf8');
+			child.stderr?.on('data', (chunk: string) => {
+				complaints = (complaints + chunk).slice(-4_000);
+			});
+			child
+				.on('error', (error) => log(`the free-model service could not start: ${error.message}`))
+				.on('exit', (code, signal) => {
+					if (code === 0 || signal === 'SIGTERM') return;
+					const said = complaints.trim().split('\n').filter(Boolean).at(-1) ?? '';
+					log(`the free-model service exited (${signal ?? code})${said ? `: ${said}` : '; no error output'}`);
+				});
+			log('starting the free-model service');
 
-		let up = false;
-		for (let waited = 0; waited < 60_000; waited += 1_000) {
-			await sleep(1_000);
-			if (await gatewayUp(base)) {
-				up = true;
-				break;
+			for (let waited = 0; waited < 60_000; waited += 1_000) {
+				await sleep(1_000);
+				if (await gatewayUp(base)) {
+					poolUp = true;
+					break;
+				}
 			}
-		}
-		if (!up) {
-			log('the free-model service did not answer; the key page will take over');
-			return false;
+			if (!poolUp) log('the local free-model service did not answer; falling back to the public endpoints');
 		}
 	}
 
-	const key = readKey(options.dataDir);
-	if (!key) {
-		log('the free-model service has no key yet; the key page will take over');
-		return false;
+	// The key the proxy reads from settings.json only exists when the local
+	// service ran. The proxy does not check the key magpie sends it, so any
+	// non-empty placeholder works for the external-only fallback.
+	const key = readKey(options.dataDir) || 'public-endpoints';
+	if (!poolUp && !readKey(options.dataDir)) {
+		log('using the keyless public endpoints (OVH, Pollinations) for free answers');
 	}
 
 	const node = options.node ?? process.execPath;
-	const proxy = await ensureProxy(options, port, node);
-	if (!proxy) return false;
+	const proxy = await ensureProxy(options, port, node, !poolUp);
+	if (!proxy) {
+		log('the free-model proxy could not start; the key page will take over');
+		return false;
+	}
 	log(`free-model proxy at ${proxy}/v1`);
 
 	try {
@@ -220,7 +237,9 @@ export async function ensureOfmRoute(options: OfmRouteOptions): Promise<boolean>
 			]);
 			log(`added the free provider from ${proxy}/v1`);
 		}
-		log('the proxy fails over between free lanes and picks up new ones itself');
+		log(poolUp
+			? 'the proxy fails over between free lanes and picks up new ones itself'
+			: 'the proxy uses the public endpoints only (local free service is down)');
 	} catch (error) {
 		// `execFile`'s message starts with the whole command line, which carries
 		// the service's own key. This log is visible in logcat and in the app's

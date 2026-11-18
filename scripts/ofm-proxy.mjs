@@ -252,10 +252,23 @@ if (invokedDirectly) {
 			console.error('OFM_EXTRA_LANES is not JSON; keeping the built-in external lanes');
 		}
 	}
+	// `OFM_POOL_LANES=[]` drops the lanes that go through the local service,
+	// leaving only the keyless public endpoints. Used when that service could
+	// not start on this device: OVH and Pollinations still answer.
+	let poolLanes = ['kilo-auto/free', 'openrouter/free'];
+	if (process.env.OFM_POOL_LANES !== undefined) {
+		try {
+			const parsed = JSON.parse(process.env.OFM_POOL_LANES);
+			if (Array.isArray(parsed)) poolLanes = parsed.map(String);
+		} catch {
+			console.error('OFM_POOL_LANES is not JSON; keeping the pool lanes');
+		}
+	}
 	const proxy = createProxy({
 		upstream: process.env.OFM_UPSTREAM,
 		port: Number(process.env.OFM_PROXY_PORT ?? 18_901),
 		keyFile: process.env.OFM_KEY_FILE,
+		lanes: poolLanes,
 		extra,
 	});
 	await proxy.listen();
