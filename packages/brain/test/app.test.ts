@@ -461,10 +461,13 @@ describe('model keys', () => {
 			},
 		});
 		expect(app.vendors()).toEqual([{ preset: 'deepseek', name: 'DeepSeek', signupUrl: 'https://platform.deepseek.com' }]);
-		await expect(app.saveProvider('nope', 'sk-1')).rejects.toMatchObject({ status: 400 });
+		// A vendor the guide names but the first-run list leaves out still goes
+		// through: magpie, not this list, decides which vendors it knows.
+		expect(await app.saveProvider('siliconflow', ' sk-123 ')).toBe('加好了');
+		await expect(app.saveProvider('Nope', 'sk-1')).rejects.toMatchObject({ status: 400 });
+		await expect(app.saveProvider('--help', 'sk-1')).rejects.toMatchObject({ status: 400 });
 		await expect(app.saveProvider('deepseek', 'sk 1')).rejects.toMatchObject({ status: 400 });
-		expect(await app.saveProvider('deepseek', ' sk-123 ')).toBe('加好了');
-		expect(saved).toEqual([{ preset: 'deepseek', key: 'sk-123' }]);
+		expect(saved).toEqual([{ preset: 'siliconflow', key: 'sk-123' }]);
 		expect(restarts).toBe(0);
 		app.restart();
 		expect(restarts).toBe(1);

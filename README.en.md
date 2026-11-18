@@ -68,6 +68,10 @@ feel like apps such as Grok:
 - **Your choice of model**: each chat can use its own model, a "think harder" switch appears for
   models that reason, photos can go to models that see, and one key in Settings connects DeepSeek,
   Kimi, Qwen and five more.
+- **A place to go when the free pool is out**: when the free lanes are queued or dry, Settings has
+  a page listing the vendors that hand out an allowance on signup - Zhipu, Bailian, SiliconFlow,
+  ModelScope, Google, Groq and OpenRouter - with a link to each one's console and a key box to
+  paste into.
 - **Voice input**, and dark, light or system theme.
 
 The first launch prepares the environment on the phone (about 300 MB, a few minutes); after that it

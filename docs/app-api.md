@@ -127,9 +127,11 @@ conversation become the owner's on first use.
 | GET | `/api/providers` | | `{ vendors: [{ preset, name, signupUrl }] }` |
 | POST | `/api/providers` | `{ preset, key }` | `{ ok: true, note }` then the process restarts to load the new models (the Android service brings it back in seconds) |
 
-`signupUrl` may be null. `preset` must be one of the listed ones. The process exits with code 0
-right after the answer is sent; expect the connection to drop and `/healthz` to fail for a few
-seconds. Where this machine cannot add keys (the gateway runs elsewhere, or the page is
+`signupUrl` may be null. `preset` is one of magpie's own ids (`magpie presets`), written as a
+lowercase word. `GET` lists what the first run offers, but a preset that list leaves out is
+accepted too - magpie is what finally decides whether it knows the vendor. The process exits with
+code 0 right after the answer is sent; expect the connection to drop and `/healthz` to fail for a
+few seconds. Where this machine cannot add keys (the gateway runs elsewhere, or the page is
 reachable from other machines without a password) the answer is 501.
 
 ## Setup mode

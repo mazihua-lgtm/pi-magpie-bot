@@ -155,6 +155,7 @@ fun BootScreen(model: AppModel, state: Boot.Preparing) {
 fun KeyScreen(model: AppModel) {
 	val palette = LocalPalette.current
 	var picked by remember { mutableStateOf<Vendor?>(null) }
+	var showQuota by remember { mutableStateOf(false) }
 	Column(Modifier.fillMaxSize().background(palette.ground).statusBarsPadding().navigationBarsPadding()) {
 		Column(Modifier.padding(horizontal = 24.dp, vertical = 28.dp)) {
 			Logo(40.dp)
@@ -165,6 +166,9 @@ fun KeyScreen(model: AppModel) {
 				"免费线路这会儿用不了。选一家模型服务商，填上它的 API Key，助理就能开口。Key 只存在这台手机上。",
 				style = MaterialTheme.typography.bodyMedium.copy(color = palette.muted),
 			)
+			TextButton(onClick = { showQuota = true }, contentPadding = androidx.compose.foundation.layout.PaddingValues(0.dp)) {
+				Text("不知道选哪家？这几家有免费额度", color = palette.link)
+			}
 		}
 		if (model.vendors.isEmpty()) {
 			Centered(Modifier.fillMaxWidth().padding(32.dp)) { CircularProgressIndicator(color = palette.ink, strokeWidth = 2.dp) }
@@ -176,6 +180,12 @@ fun KeyScreen(model: AppModel) {
 		}
 	}
 	picked?.let { vendor -> KeySheet(model, vendor) { picked = null } }
+	if (showQuota) {
+		FreeQuotaSheet({ showQuota = false }) { vendor ->
+			showQuota = false
+			picked = vendor
+		}
+	}
 }
 
 @Composable

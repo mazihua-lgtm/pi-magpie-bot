@@ -487,7 +487,13 @@ export class AppService implements AppBackend {
 	async saveProvider(preset: unknown, key: unknown): Promise<string> {
 		const save = this.options.saveProvider;
 		if (!save) throw new AppError(501, '这台机器上不能在这里添加模型 / keys cannot be added here');
-		if (typeof preset !== 'string' || !this.vendors().some((vendor) => vendor.preset === preset)) {
+		// A preset is one of magpie's own ids (`magpie presets`), and magpie is
+		// what decides whether it knows one. The vendor list is only what the
+		// first run offers: the free-allowance guide names vendors that list
+		// leaves out, and holding it to that list is how a guide row ends up
+		// advertising a vendor the app then refuses. The shape is still checked,
+		// so nothing lands in argument position that magpie would read as a flag.
+		if (typeof preset !== 'string' || !/^[a-z0-9][a-z0-9._-]{0,40}$/.test(preset)) {
 			throw new AppError(400, '没有这家厂商 / unknown vendor');
 		}
 		const trimmed = typeof key === 'string' ? key.trim() : '';

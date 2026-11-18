@@ -35,6 +35,7 @@ import androidx.compose.material.icons.outlined.Alarm
 import androidx.compose.material.icons.outlined.BatteryChargingFull
 import androidx.compose.material.icons.outlined.Bookmark
 import androidx.compose.material.icons.outlined.CalendarMonth
+import androidx.compose.material.icons.outlined.CardGiftcard
 import androidx.compose.material.icons.outlined.Check
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.Info
@@ -338,6 +339,7 @@ fun SettingsScreen(model: AppModel) {
 	val context = LocalContext.current
 	var choosingModel by remember { mutableStateOf(false) }
 	var choosingVendor by remember { mutableStateOf(false) }
+	var showQuota by remember { mutableStateOf(false) }
 	var vendor by remember { mutableStateOf<Vendor?>(null) }
 	var showLog by remember { mutableStateOf(false) }
 	val power = remember { context.getSystemService(PowerManager::class.java) }
@@ -361,6 +363,7 @@ fun SettingsScreen(model: AppModel) {
 			Group {
 				Item(Icons.Outlined.Memory, "默认模型", model.models.firstOrNull { it.id == model.defaultModel }?.name?.let(::shortModel) ?: "自动") { choosingModel = true }
 				Item(Icons.Outlined.Key, "添加模型服务商", "填自己的 API Key，用更强的模型") { model.loadVendors(); choosingVendor = true }
+				Item(Icons.Outlined.CardGiftcard, "免费额度怎么拿", "免费线路到量时，这几家注册就送") { showQuota = true }
 			}
 
 			SectionLabel("后台")
@@ -411,6 +414,12 @@ fun SettingsScreen(model: AppModel) {
 		}
 	}
 	vendor?.let { KeySheet(model, it) { vendor = null } }
+	if (showQuota) {
+		FreeQuotaSheet({ showQuota = false }) { picked ->
+			showQuota = false
+			vendor = picked
+		}
+	}
 	if (showLog) {
 		AlertDialog(
 			onDismissRequest = { showLog = false },
