@@ -15,6 +15,14 @@ export interface WebChannelOptions {
 	host?: string;
 	/** If set, the page asks for it before anything is accepted. */
 	password?: string;
+	/**
+	 * The token the native app on this device sends as a bearer on every API
+	 * request. When set, all `/api/*` routes (except `/api/login` and
+	 * `/api/pair/exchange`) require it — either as `Authorization: Bearer` or
+	 * as the `local_token` cookie, which the page itself gets on first load.
+	 * This is what stops another app on the same device from calling the API.
+	 */
+	localToken?: string;
 	/** Address to put in a pairing QR (a LAN IP or a hostname). Auto-detected if absent. */
 	pairHost?: string;
 	/**
@@ -167,6 +175,30 @@ export class WebChannel implements Channel {
 		return a.length === b.length && timingSafeEqual(a, b);
 	}
 
+	/**
+	 * Whether the caller holds the device-local token. Checked on every API
+	 * route when `localToken` is set: the native app sends it as a bearer, the
+	 * web page gets it as a cookie on first load. Routes that exist to log in
+	 * or pair (login, exchange) are exempt — they are how a caller gets access.
+	 */
+	private localAuthorized(request: IncomingMessage, cookie: Record<string, string>): boolean {
+		if (!this.options.localToken) return true;
+		const header = request.headers.authorization;
+		if (header?.startsWith('Bearer ')) {
+			const given = header.slice(7).trim();
+			const a = Buffer.from(given);
+			const b = Buffer.from(this.options.localToken);
+			return a.length === b.length && timingSafeEqual(a, b);
+		}
+		const given = cookie.local_token;
+		if (given) {
+			const a = Buffer.from(given);
+			const b = Buffer.from(this.options.localToken);
+			return a.length === b.length && timingSafeEqual(a, b);
+		}
+		return false;
+	}
+
 	private passwordMatches(given: unknown): boolean {
 		const expected = this.options.password ?? '';
 		if (typeof given !== 'string') return false;
@@ -228,7 +260,13 @@ export class WebChannel implements Channel {
 		const existing = cookie.sid;
 		if (existing) return existing;
 		const fresh = randomUUID();
-		response.setHeader('set-cookie', `sid=${fresh}; Path=/; HttpOnly; SameSite=Lax; Max-Age=31536000`);
+		// The page gets the local token as a cookie alongside its sid, so its own
+		// fetch calls carry it without the page script ever having to know it.
+		const lines = [`sid=${fresh}; Path=/; HttpOnly; SameSite=Lax; Max-Age=31536000`];
+		if (this.options.localToken) {
+			lines.push(`local_token=${this.options.localToken}; Path=/; HttpOnly; SameSite=Lax; Max-Age=31536000`);
+		}
+		response.setHeader('set-cookie', lines);
 		return fresh;
 	}
 
@@ -318,7 +356,7 @@ export class WebChannel implements Channel {
 		// only that code, never the password. Exchanging it signs the caller's own
 		// sid, so a photo of the QR alone is worth nothing.
 		if (url.pathname === '/api/pair' && request.method === 'POST') {
-			if (!this.authorized(request, cookie)) return json(response, 401, { error: 'unauthorized' });
+			if (!this.authorized(request, cookie) || !this.localAuthorized(request, cookie)) return json(response, 401, { error: 'unauthorized' });
 			const address = lanAddress(this.options.pairHost);
 			if (!address) return json(response, 400, { error: '找不到手机能访问的局域网地址；设 PAIR_HOST 再试 / set PAIR_HOST' });
 			const { code, expiresAt } = this.pairing.create();
@@ -327,7 +365,7 @@ export class WebChannel implements Channel {
 		}
 
 		if (url.pathname === '/api/pair/qr' && request.method === 'GET') {
-			if (!this.authorized(request, cookie)) return json(response, 401, { error: 'unauthorized' });
+			if (!this.authorized(request, cookie) || !this.localAuthorized(request, cookie)) return json(response, 401, { error: 'unauthorized' });
 			const code = url.searchParams.get('code') ?? '';
 			if (!/^[A-Z0-9]{4,8}$/.test(code)) return json(response, 400, { error: 'bad code' });
 			const address = lanAddress(this.options.pairHost);
@@ -364,7 +402,7 @@ export class WebChannel implements Channel {
 		}
 
 		if (url.pathname === '/api/events' && request.method === 'GET') {
-			if (!this.authorized(request, cookie)) return json(response, 401, { error: 'unauthorized' });
+			if (!this.authorized(request, cookie) || !this.localAuthorized(request, cookie)) return json(response, 401, { error: 'unauthorized' });
 			if (url.searchParams.get('v') === '2') {
 				if (!OWNER.test(session)) return json(response, 400, { error: 'sid 只能是字母、数字、- 和 _ / bad sid' });
 				return this.subscribeLive(session, response);
@@ -373,7 +411,7 @@ export class WebChannel implements Channel {
 		}
 
 		if (url.pathname === '/api/message' && request.method === 'POST') {
-			if (!this.authorized(request, cookie)) return json(response, 401, { error: 'unauthorized' });
+			if (!this.authorized(request, cookie) || !this.localAuthorized(request, cookie)) return json(response, 401, { error: 'unauthorized' });
 			const body = await readJson(request);
 			const text = typeof body.text === 'string' ? body.text.trim() : '';
 			if (!text) return json(response, 400, { error: 'empty message' });
@@ -389,7 +427,7 @@ export class WebChannel implements Channel {
 
 		const app = this.options.app;
 		if (app && url.pathname.startsWith('/api/')) {
-			if (!this.authorized(request, cookie)) return json(response, 401, { error: 'unauthorized' });
+			if (!this.authorized(request, cookie) || !this.localAuthorized(request, cookie)) return json(response, 401, { error: 'unauthorized' });
 			if (!OWNER.test(session)) return json(response, 400, { error: 'sid 只能是字母、数字、- 和 _ / bad sid' });
 			const handled = await routeApp({
 				request,
@@ -402,6 +440,13 @@ export class WebChannel implements Channel {
 				json: (status, body) => json(response, status, body),
 			});
 			if (handled) return;
+		}
+
+		// An `/api/*` path that no route above claimed still gets the token gate.
+		// Without it, a request to a nonexistent route would leak a 404 to anyone
+		// on the loopback, and an attacker could probe what exists without a token.
+		if (url.pathname.startsWith('/api/') && !this.localAuthorized(request, cookie)) {
+			return json(response, 401, { error: 'unauthorized' });
 		}
 
 		return json(response, 404, { error: 'not found' });

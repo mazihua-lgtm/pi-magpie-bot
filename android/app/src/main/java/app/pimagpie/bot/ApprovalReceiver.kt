@@ -21,7 +21,8 @@ class ApprovalReceiver : BroadcastReceiver() {
 		val pending = goAsync()
 		Thread {
 			val status = try {
-				val session = context.getSharedPreferences("bot", Context.MODE_PRIVATE).getString("sid", null)
+				val prefs = context.getSharedPreferences("bot", Context.MODE_PRIVATE)
+				val session = prefs.getString("sid", null)
 				if (session == null) {
 					Logs.add("[app] could not answer an approval: no session")
 					-1
@@ -32,6 +33,9 @@ class ApprovalReceiver : BroadcastReceiver() {
 					val connection = java.net.URL("$base/api/approvals/$id").openConnection() as java.net.HttpURLConnection
 					connection.requestMethod = "POST"
 					connection.setRequestProperty("Cookie", cookie)
+					if (remote.mode == app.pimagpie.bot.data.Remote.Mode.LOCAL) {
+						connection.setRequestProperty("Authorization", "Bearer ${prefs.getString(app.pimagpie.bot.data.Api.TOKEN, "") ?: ""}")
+					}
 					connection.setRequestProperty("Content-Type", "application/json; charset=utf-8")
 					connection.connectTimeout = 5_000
 					connection.readTimeout = 10_000

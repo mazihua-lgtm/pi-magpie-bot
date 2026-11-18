@@ -2,6 +2,7 @@ package app.pimagpie.bot
 
 import android.content.Context
 import java.io.File
+import java.security.SecureRandom
 import java.util.TimeZone
 
 /**
@@ -29,6 +30,23 @@ object Runner {
 		)
 	}
 
+	/**
+	 * The token the bot process validates on the loopback. Read from the same
+	 * SharedPreferences the Api uses, so the app's requests and the bot's check
+	 * agree. Generated here if the Api has not been created yet (the service can
+	 * start before the UI has touched it).
+	 */
+	private fun localToken(context: Context): String {
+		val prefs = context.getSharedPreferences(app.pimagpie.bot.data.Api.PREFS, Context.MODE_PRIVATE)
+		return prefs.getString(app.pimagpie.bot.data.Api.TOKEN, null) ?: run {
+			val bytes = ByteArray(32)
+			SecureRandom().nextBytes(bytes)
+			val token = bytes.joinToString("") { "%02x".format(it) }
+			prefs.edit().putString(app.pimagpie.bot.data.Api.TOKEN, token).apply()
+			token
+		}
+	}
+
 	fun environment(context: Context): Map<String, String> {
 		val native = Paths.native(context)
 		return mapOf(
@@ -50,6 +68,10 @@ object Runner {
 			"WEB_PORT" to PORT.toString(),
 			"DATA_DIR" to "/data",
 			"TZ" to TimeZone.getDefault().id,
+			// The app sends this as a bearer token on every request; the web
+			// channel checks it on the loopback, so no other app on the phone
+			// can call the API.
+			"LOCAL_TOKEN" to localToken(context),
 		)
 	}
 }

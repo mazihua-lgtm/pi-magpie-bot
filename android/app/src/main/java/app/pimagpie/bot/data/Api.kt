@@ -41,6 +41,23 @@ class Api(context: Context) {
 		prefs.edit().putString(SESSION, it).apply()
 	}
 
+	/**
+	 * The token this phone's app presents to its own bot. Generated once and
+	 * kept in SharedPreferences; the same value is handed to the bot process as
+	 * LOCAL_TOKEN, so only this app can call the API on the loopback. Another
+	 * app on the phone cannot read another app's SharedPreferences, and the
+	 * token never leaves the device.
+	 */
+	val token: String = prefs.getString(TOKEN, null) ?: generateToken().also {
+		prefs.edit().putString(TOKEN, it).apply()
+	}
+
+	private fun generateToken(): String {
+		val bytes = ByteArray(32)
+		java.security.SecureRandom().nextBytes(bytes)
+		return bytes.joinToString("") { "%02x".format(it) }
+	}
+
 	/** The base this app currently speaks to: local proot, or a paired machine. */
 	private val base: String
 		get() = remote.base.ifBlank { Runner.BASE }
@@ -246,6 +263,12 @@ class Api(context: Context) {
 		connection.connectTimeout = timeout
 		connection.readTimeout = timeout
 		connection.setRequestProperty("Cookie", cookies)
+		// Local mode only: the bot validates this bearer against its LOCAL_TOKEN.
+		// Remote mode: the paired server has its own auth (sid+auth cookie) and
+		// does not expect this phone's local token.
+		if (remote.mode == Remote.Mode.LOCAL) {
+			connection.setRequestProperty("Authorization", "Bearer $token")
+		}
 		connection.useCaches = false
 		return connection
 	}
@@ -288,5 +311,6 @@ class Api(context: Context) {
 	companion object {
 		const val PREFS = "bot"
 		const val SESSION = "sid"
+		const val TOKEN = "local_token"
 	}
 }

@@ -4,7 +4,7 @@ import { WebChannel } from '../src/index.ts';
 
 const servers: WebChannel[] = [];
 
-const start = async (options: { host?: string; password?: string; pairHost?: string; secret?: { get(): string | undefined; set(value: string): void }; history?: (target: string) => Promise<Array<{ role: 'me' | 'bot'; text: string }>> } = {}) => {
+const start = async (options: { host?: string; password?: string; pairHost?: string; localToken?: string; secret?: { get(): string | undefined; set(value: string): void }; history?: (target: string) => Promise<Array<{ role: 'me' | 'bot'; text: string }>> } = {}) => {
 	const messages: { target: string; text: string }[] = [];
 	const channel = new WebChannel({
 		port: 0,
@@ -348,6 +348,142 @@ describe('pairing a phone', () => {
 			body: JSON.stringify({ code: code.toLowerCase() }),
 		});
 		expect(lower.status).toBe(200);
+	});
+});
+
+describe('device-local token auth', () => {
+	it('refuses an API call without the token when localToken is set', async () => {
+		const { url, messages } = await start({ localToken: 'secret-token-123' });
+
+		const rejected = await fetch(`${url}/api/message`, {
+			method: 'POST',
+			headers: { 'content-type': 'application/json' },
+			body: JSON.stringify({ text: 'hi' }),
+		});
+		expect(rejected.status).toBe(401);
+		expect(messages).toHaveLength(0);
+	});
+
+	it('accepts an API call with a matching bearer token', async () => {
+		const { url, messages } = await start({ localToken: 'secret-token-123' });
+
+		const accepted = await fetch(`${url}/api/message`, {
+			method: 'POST',
+			headers: { 'content-type': 'application/json', authorization: 'Bearer secret-token-123' },
+			body: JSON.stringify({ text: 'hi' }),
+		});
+		expect(accepted.status).toBe(202);
+		expect(messages).toHaveLength(1);
+	});
+
+	it('rejects a wrong bearer token', async () => {
+		const { url } = await start({ localToken: 'secret-token-123' });
+
+		const rejected = await fetch(`${url}/api/message`, {
+			method: 'POST',
+			headers: { 'content-type': 'application/json', authorization: 'Bearer wrong-token' },
+			body: JSON.stringify({ text: 'hi' }),
+		});
+		expect(rejected.status).toBe(401);
+	});
+
+	it('accepts the token as a local_token cookie', async () => {
+		const { url, messages } = await start({ localToken: 'secret-token-123' });
+
+		// The page receives the local_token cookie; the page's own fetches carry it.
+		const page = await fetch(`${url}/`);
+		const cookies = page.headers.getSetCookie().map((c) => c.split(';')[0]).join('; ');
+		expect(cookies).toContain('local_token=secret-token-123');
+
+		const accepted = await fetch(`${url}/api/message`, {
+			method: 'POST',
+			headers: { 'content-type': 'application/json', cookie: cookies },
+			body: JSON.stringify({ text: 'hi' }),
+		});
+		expect(accepted.status).toBe(202);
+		expect(messages).toHaveLength(1);
+	});
+
+	it('does not require the token when localToken is not set', async () => {
+		const { url } = await start();
+		const accepted = await fetch(`${url}/api/message`, {
+			method: 'POST',
+			headers: { 'content-type': 'application/json' },
+			body: JSON.stringify({ text: 'hi' }),
+		});
+		expect(accepted.status).toBe(202);
+	});
+
+	it('protects app API routes with the token', async () => {
+		const { url } = await start({ localToken: 'secret-token-123' });
+
+		// The page gets a sid and a local_token cookie. Without either, the gate
+		// refuses; with the bearer, it passes (404 here, because no app backend).
+		const page = await fetch(`${url}/`);
+		const cookies = page.headers.getSetCookie().map((c) => c.split(';')[0]).join('; ');
+		const session = cookies.split('sid=')[1]?.split(';')[0];
+
+		// No cookie at all: rejected.
+		const noCookie = await fetch(`${url}/api/chats`);
+		expect(noCookie.status).toBe(401);
+
+		// Session cookie only, no local_token: rejected.
+		const sidOnly = await fetch(`${url}/api/chats`, {
+			headers: { cookie: `sid=${session}` },
+		});
+		expect(sidOnly.status).toBe(401);
+
+		// Session + bearer: passes the gate (404 because no app backend).
+		const accepted = await fetch(`${url}/api/chats`, {
+			headers: { cookie: `sid=${session}`, authorization: 'Bearer secret-token-123' },
+		});
+		expect(accepted.status).not.toBe(401);
+		expect(session).toBeTruthy();
+	});
+
+	it('allows login without the token (it is the way in)', async () => {
+		const { url } = await start({ password: 'pw', localToken: 'secret-token-123' });
+
+		// The login route is exempt: a caller who has not logged in yet cannot
+		// have a token, and the password is the gate.
+		const page = await fetch(`${url}/`);
+		const cookies = page.headers.getSetCookie().map((c) => c.split(';')[0]).join('; ');
+		const login = await fetch(`${url}/api/login`, {
+			method: 'POST',
+			headers: { 'content-type': 'application/json', cookie: cookies },
+			body: JSON.stringify({ password: 'pw' }),
+		});
+		expect(login.status).toBe(200);
+	});
+
+	it('allows pair/exchange without the token (it is how a phone gets in)', async () => {
+		const { url } = await start({ password: 'pw', localToken: 'secret-token-123', pairHost: '192.168.1.9' });
+
+		const page = await fetch(`${url}/`);
+		const cookies = page.headers.getSetCookie().map((c) => c.split(';')[0]).join('; ');
+		const login = await fetch(`${url}/api/login`, {
+			method: 'POST',
+			headers: { 'content-type': 'application/json', cookie: cookies },
+			body: JSON.stringify({ password: 'pw' }),
+		});
+		const auth = (login.headers.getSetCookie().map((c) => c.split(';')[0]))[0] ?? '';
+		const ownerCookie = `${cookies}; ${auth}`;
+
+		const made = await fetch(`${url}/api/pair`, {
+			method: 'POST',
+			headers: { 'content-type': 'application/json', cookie: ownerCookie, authorization: 'Bearer secret-token-123' },
+			body: '{}',
+		});
+		expect(made.status).toBe(200);
+
+		const { code } = (await made.json()) as { code: string };
+		const phoneSid = 'phone-session-token-test';
+		const exchange = await fetch(`${url}/api/pair/exchange`, {
+			method: 'POST',
+			headers: { 'content-type': 'application/json', cookie: `sid=${phoneSid}` },
+			body: JSON.stringify({ code }),
+		});
+		expect(exchange.status).toBe(200);
 	});
 });
 

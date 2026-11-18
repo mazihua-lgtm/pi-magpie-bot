@@ -188,13 +188,17 @@ class AssistantService : Service() {
 	private val alerted = HashMap<String, Long>()
 
 	private fun listen(): Boolean {
-		val session = getSharedPreferences(PREFS, MODE_PRIVATE).getString(SESSION, null) ?: return false
+		val prefs = getSharedPreferences(PREFS, MODE_PRIVATE)
+		val session = prefs.getString(SESSION, null) ?: return false
 		val remote = app.pimagpie.bot.data.Remote(this)
 		val base = remote.base.ifBlank { Runner.BASE }
 		val cookie = listOf("sid=$session", remote.auth.ifBlank { null }).filterNotNull().joinToString("; ")
 		val connection = URL("$base/api/events?v=2").openConnection() as HttpURLConnection
 		return try {
 			connection.setRequestProperty("Cookie", cookie)
+			if (remote.mode == app.pimagpie.bot.data.Remote.Mode.LOCAL) {
+				connection.setRequestProperty("Authorization", "Bearer ${prefs.getString(app.pimagpie.bot.data.Api.TOKEN, "") ?: ""}")
+			}
 			connection.setRequestProperty("Accept", "text/event-stream")
 			connection.connectTimeout = 5_000
 			connection.readTimeout = 0
