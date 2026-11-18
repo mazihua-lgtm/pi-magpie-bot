@@ -14,6 +14,8 @@
 
 <p align="center">中文 · <b><a href="README.en.md">English</a></b> · <a href="#安卓-app--android">安卓 App</a> · <a href="#快速开始--quick-start">电脑 / 服务器</a> · <a href="#接到-telegram">Telegram</a> · <a href="docs/architecture.md">架构</a> · <a href="docs/own-models.md">自带模型</a></p>
 
+<p align="center"><b>喜鹊一叫，事儿有着落。</b></p>
+
 **喜鹊是一个一直在线、会记事、会提醒你、能上网查最新消息的私人助理，整只装在你自己的安卓手机里。** 也可以跑在电脑或服务器上，从浏览器或 Telegram 用。默认用免费模型开口说话：不用注册账号，不用 API key。
 
 > 喜鹊 is an always-on personal assistant that lives in your own Android phone — memory, reminders, web search, free models out of the box (no account, no API key). It also runs on a computer or server behind a browser or Telegram.

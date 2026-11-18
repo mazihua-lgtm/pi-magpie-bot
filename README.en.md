@@ -14,6 +14,8 @@
 
 <p align="center"><a href="README.md">中文</a> · <b>English</b> · <a href="#android-app">Android app</a> · <a href="#quick-start">Quick start</a> · <a href="#telegram">Telegram</a> · <a href="docs/architecture.md">Architecture</a> · <a href="docs/own-models.md">Own models</a></p>
 
+<p align="center"><b>Good news, on time.</b></p>
+
 **喜鹊 ("magpie") is an always-on personal assistant that lives in your own Android phone.** It
 remembers things, keeps reminders across restarts, looks things up on the web, and speaks through
 free models out of the box: no account, no API key, no bill. It also runs on a computer or server,
