@@ -74,10 +74,6 @@ function isLocalHost(header: string | undefined): boolean {
 	return name === 'localhost' || name === '127.0.0.1' || name === '[::1]';
 }
 
-function isLoopback(host: string): boolean {
-	return host === 'localhost' || host === '::1' || host.startsWith('127.');
-}
-
 function json(response: ServerResponse, status: number, body: unknown): void {
 	const payload = JSON.stringify(body);
 	response.writeHead(status, { 'content-type': 'application/json; charset=utf-8' });
@@ -153,7 +149,11 @@ export class WebChannel implements Channel {
 	}
 
 	private token(session: string): string {
-		return createHmac('sha256', this.secret).update(session).digest('hex');
+		// Mix the password into the signing key: changing WEB_PASSWORD then
+		// invalidates every browser and paired phone at once, without rotating
+		// the persisted secret (which would also sign out on every restart).
+		const key = createHmac('sha256', this.secret).update(this.options.password ?? '').digest();
+		return createHmac('sha256', key).update(session).digest('hex');
 	}
 
 	private authorized(request: IncomingMessage, cookie: Record<string, string>): boolean {
@@ -251,12 +251,13 @@ export class WebChannel implements Channel {
 		}
 		const cookie = cookies(request);
 
-		// A page open on the internet can aim at 127.0.0.1 too, either by rebinding
-		// its own name to it or by posting from the user's browser. With no password
-		// there is nothing else to stop it, so the page answers only to this
-		// machine's own names, and only to bodies a foreign page cannot send.
-		if (!this.options.password && isLoopback(this.options.host ?? '127.0.0.1') && !isLocalHost(request.headers.host)) {
-			return json(response, 421, { error: 'this page answers only on localhost' });
+		// With no password there is nothing but the Host header to stop a page on
+		// the internet from reaching this server (DNS rebinding points the browser
+		// at 127.0.0.1, or at a 0.0.0.0-bound container on the host). So check it
+		// regardless of the listen address — checking only when bound to loopback
+		// left the Docker default (0.0.0.0) wide open.
+		if (!this.options.password && !isLocalHost(request.headers.host)) {
+			return json(response, 421, { error: 'this page answers only on localhost; set WEB_PASSWORD to allow other hosts' });
 		}
 		const hasBody = request.method === 'POST' || request.method === 'PUT' || request.method === 'PATCH';
 		if (hasBody && !(request.headers['content-type'] ?? '').startsWith('application/json')) {

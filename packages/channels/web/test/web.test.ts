@@ -4,7 +4,7 @@ import { WebChannel } from '../src/index.ts';
 
 const servers: WebChannel[] = [];
 
-const start = async (options: { password?: string; pairHost?: string; secret?: { get(): string | undefined; set(value: string): void }; history?: (target: string) => Promise<Array<{ role: 'me' | 'bot'; text: string }>> } = {}) => {
+const start = async (options: { host?: string; password?: string; pairHost?: string; secret?: { get(): string | undefined; set(value: string): void }; history?: (target: string) => Promise<Array<{ role: 'me' | 'bot'; text: string }>> } = {}) => {
 	const messages: { target: string; text: string }[] = [];
 	const channel = new WebChannel({
 		port: 0,
@@ -180,6 +180,24 @@ describe('web channel', () => {
 			socket.on('close', () => resolve(data));
 		});
 		expect(reply.startsWith('HTTP/1.1 421')).toBe(true);
+	});
+
+	it('refuses a foreign Host with no password even when bound to 0.0.0.0 (DNS rebinding)', async () => {
+		// The Docker default binds 0.0.0.0. Checking the Host only on loopback
+		// left that wide open: a malicious page could rebind a name to 127.0.0.1
+		// and reach the container. The check must not depend on the bind address.
+		const { url } = await start({ host: '0.0.0.0' });
+		const { port } = new URL(url);
+		const ask = (host: string) => new Promise<string>((resolve) => {
+			const socket = connect(Number(port), '127.0.0.1', () => {
+				socket.write(`GET / HTTP/1.1\r\nHost: ${host}\r\nConnection: close\r\n\r\n`);
+			});
+			let data = '';
+			socket.on('data', (chunk) => (data += chunk));
+			socket.on('close', () => resolve(data));
+		});
+		expect((await ask('evil.example')).startsWith('HTTP/1.1 421')).toBe(true);
+		expect((await ask('localhost')).startsWith('HTTP/1.1 200')).toBe(true);
 	});
 
 	it('stops a password guesser after ten misses', async () => {
@@ -403,5 +421,45 @@ describe('the cookie secret', () => {
 			body: JSON.stringify({ text: '重启后还在' }),
 		});
 		expect(again.status).toBe(202);
+	});
+
+	it('changes every session when the password changes, even with the same secret', async () => {
+		let stored: string | undefined;
+		const secretStore = { get: () => stored, set: (value: string) => { stored = value; } };
+		const first = await start({ password: 'old-pass', secret: secretStore });
+		const page = await fetch(`${first.url}/`);
+		const sid = page.headers.get('set-cookie')?.split(';')[0] ?? '';
+		const login = await fetch(`${first.url}/api/login`, {
+			method: 'POST',
+			headers: { 'content-type': 'application/json', cookie: sid },
+			body: JSON.stringify({ password: 'old-pass' }),
+		});
+		const auth = login.headers.getSetCookie().map((line) => line.split(';')[0])[0] ?? '';
+		const cookie = `${sid}; ${auth}`;
+
+		// Same persisted secret, new password: the old auth must no longer work.
+		const changed = await start({ password: 'new-pass', secret: secretStore });
+		const rejected = await fetch(`${changed.url}/api/message`, {
+			method: 'POST',
+			headers: { 'content-type': 'application/json', cookie },
+			body: JSON.stringify({ text: '旧密码还有效吗' }),
+		});
+		expect(rejected.status).toBe(401);
+
+		// Logging in with the new password works, and changes the cookie.
+		const relogin = await fetch(`${changed.url}/api/login`, {
+			method: 'POST',
+			headers: { 'content-type': 'application/json', cookie: sid },
+			body: JSON.stringify({ password: 'new-pass' }),
+		});
+		expect(relogin.status).toBe(200);
+		const newAuth = relogin.headers.getSetCookie().map((line) => line.split(';')[0])[0] ?? '';
+		expect(newAuth).not.toBe(auth);
+		const ok = await fetch(`${changed.url}/api/message`, {
+			method: 'POST',
+			headers: { 'content-type': 'application/json', cookie: `${sid}; ${newAuth}` },
+			body: JSON.stringify({ text: '新密码' }),
+		});
+		expect(ok.status).toBe(202);
 	});
 });

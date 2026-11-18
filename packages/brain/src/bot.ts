@@ -374,20 +374,32 @@ export class Bot {
 		const conversation = conversationIdFor(event.channel, event.target);
 		this.targets.bind({ conversation, channel: event.channel, target: event.target });
 
-		// A picture is never a yes or a no.
-		const answer = event.images && event.images.length > 0 ? undefined : this.approvals.answer(conversation, event.text);
+		// An approval answer is handled here and never becomes a chat turn. It
+		// still goes through source_key de-duplication (as a `done` inbox row):
+		// a platform that redelivers the same "yes" must not approve a second,
+		// later card with it. Only decide() changing a pending row earns a reply,
+		// so a stale answer to an already-decided card says nothing.
+		const isAnswer = !event.images || event.images.length === 0;
+		const answer = isAnswer ? this.approvals.answer(conversation, event.text) : undefined;
 		if (answer) {
-			this.approvals.decide(answer.row.id, answer.allowed ? 'allowed' : 'denied');
-			this.outbox.enqueue({
+			if (!this.inbox.admitHandled({
+				source: event.source,
+				sourceKey: event.sourceKey,
 				conversation,
-				channel: event.channel,
-				target: event.target,
-				text: bilingual(
-					event.text,
-					answer.allowed ? '好，继续。' : '好，这件事不做了。',
-					answer.allowed ? 'Approved, continuing.' : 'Understood, dropped.',
-				),
-			});
+				text: event.text,
+			})) return true; // already seen: swallow the redelivery
+			if (this.approvals.decide(answer.row.id, answer.allowed ? 'allowed' : 'denied')) {
+				this.outbox.enqueue({
+					conversation,
+					channel: event.channel,
+					target: event.target,
+					text: bilingual(
+						event.text,
+						answer.allowed ? '好，继续。' : '好，这件事不做了。',
+						answer.allowed ? 'Approved, continuing.' : 'Understood, dropped.',
+					),
+				});
+			}
 			return true;
 		}
 

@@ -270,7 +270,10 @@ to paste your own key (with signup links per vendor). On a cloud server the box 
 `WEB_PASSWORD` before it saves anything, and is hidden if none is set, so nobody can swap your key.
 
 It is published to this machine only (`WEB_BIND=127.0.0.1`); to reach it from a phone or another
-device, set `WEB_BIND=0.0.0.0` and always set `WEB_PASSWORD`.
+device, set `WEB_BIND=0.0.0.0` and always set `WEB_PASSWORD`. With no password, the page answers
+only to local Host names (`localhost` / `127.0.0.1`) and refuses every other Host, so a malicious
+page cannot reach your local port through DNS rebinding. With a password, the password protects
+it — and changing it signs out every browser and paired phone at once.
 
 To run magpie in its own container (for example several bots sharing one gateway), use
 `docker compose -f compose.split.yml up -d`; the steps are at the top of that file.

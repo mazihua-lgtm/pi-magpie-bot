@@ -59,6 +59,22 @@ export class Inbox {
 		this.host = host;
 	}
 
+	/**
+	 * Record a message handled immediately (an approval answer), using the same
+	 * source_key uniqueness as `admit` so a redelivered "yes" cannot approve
+	 * twice. The row starts `done`, so the worker never treats it as a chat turn.
+	 * Returns false when this exact platform message was seen before.
+	 */
+	admitHandled(event: IncomingEvent): boolean {
+		const result = this.host.db
+			.prepare(
+				`INSERT OR IGNORE INTO inbox (id, source, source_key, conversation, text, received_at, status, attachments)
+				 VALUES (?, ?, ?, ?, ?, ?, 'done', NULL)`,
+			)
+			.run(randomUUID(), event.source, event.sourceKey, event.conversation, event.text, Date.now());
+		return Number(result.changes) > 0;
+	}
+
 	/** Returns false when this exact platform message was already accepted. */
 	admit(event: IncomingEvent): boolean {
 		const result = this.host.db

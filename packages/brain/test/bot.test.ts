@@ -102,6 +102,34 @@ describe('bot ingest', () => {
 		expect(sent).toEqual(['好，继续。']);
 		expect(bot.inspect().pendingEvents).toBe(0);
 	});
+
+	it('does not let a redelivered yes approve a second card', async () => {
+		const dir = await dataDir();
+		const { bot, sent } = await openBot(dir);
+
+		const conversation = conversationIdFor('cli', 'me');
+		const host = openHostDb(join(dir, 'host.sqlite'));
+		const card = (id: string) =>
+			host.db
+				.prepare(`INSERT INTO approvals (id, conversation, channel, target, action, created_at) VALUES (?, ?, ?, ?, ?, ?)`)
+				.run(id, conversation, 'cli', 'me', '执行命令：something', Date.now());
+		card('a1');
+		const yes = { source: 'cli', sourceKey: 'same-5', channel: 'cli', target: 'me', text: '是' };
+
+		expect(bot.ingest(yes)).toBe(true);
+		await bot.dispatch();
+		expect(sent).toEqual(['好，继续。']);
+
+		// Same platform message redelivered, and a new card opened meanwhile:
+		// it must not approve a2, and must not say "继续" a second time.
+		card('a2');
+		expect(bot.ingest(yes)).toBe(true);
+		await bot.dispatch();
+		expect(sent).toEqual(['好，继续。']);
+		const pending = host.db.prepare(`SELECT id FROM approvals WHERE status = 'pending'`).all() as Array<{ id: string }>;
+		expect(pending.map((row) => row.id)).toEqual(['a2']);
+		host.close();
+	});
 });
 
 describe('the loop', () => {

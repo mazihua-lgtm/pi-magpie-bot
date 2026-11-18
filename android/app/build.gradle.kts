@@ -21,8 +21,8 @@ android {
 		// written when it last unpacked, and re-unpacks when they differ. Without
 		// that, an updated APK keeps running the old node, magpie and bot code,
 		// and an update looks like it did nothing.
-		versionCode = 9
-		versionName = "0.4.1"
+		versionCode = 10
+		versionName = "0.4.2"
 		// The environment inside is linux-arm64: one payload, so one kind of phone.
 		ndk { abiFilters += listOf("arm64-v8a") }
 	}
