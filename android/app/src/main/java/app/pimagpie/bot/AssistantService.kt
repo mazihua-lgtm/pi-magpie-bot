@@ -203,7 +203,7 @@ class AssistantService : Service() {
 										// connection; a card is news once, not once per reconnect.
 										val id = event.optString("id")
 										val due = System.currentTimeMillis()
-										if (id.isNotEmpty() && alerted.put(id, due) == null) alert("需要你同意", event.optString("action"), chat)
+										if (id.isNotEmpty() && alerted.put(id, due) == null) ask(id, event.optString("action"), chat)
 										alerted.entries.removeAll { due - it.value > 10 * 60_000 }
 									}
 								}
@@ -219,6 +219,40 @@ class AssistantService : Service() {
 		} finally {
 			connection.disconnect()
 		}
+	}
+
+	/** A card that can be answered from the shade, without opening the app. */
+	private fun ask(id: String, action: String, chat: String) {
+		val manager = getSystemService(NotificationManager::class.java)
+		val plain = action.replace(Regex("[*_`#>]"), "").trim()
+		val open = PendingIntent.getActivity(
+			this,
+			chat.hashCode(),
+			Intent(this, MainActivity::class.java)
+				.putExtra(MainActivity.EXTRA_CHAT, chat)
+				.addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP),
+			PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
+		)
+		fun answer(allow: Boolean) = PendingIntent.getBroadcast(
+			this,
+			id.hashCode() * 2 + if (allow) 1 else 0,
+			Intent(this, ApprovalReceiver::class.java)
+				.setAction(ApprovalReceiver.ACTION)
+				.putExtra(ApprovalReceiver.EXTRA_ID, id)
+				.putExtra(ApprovalReceiver.EXTRA_ALLOW, allow),
+			PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
+		)
+		val notification = Notification.Builder(this, CHANNEL_ALERT)
+			.setSmallIcon(R.drawable.ic_notify)
+			.setContentTitle("需要你同意")
+			.setContentText(plain)
+			.setStyle(Notification.BigTextStyle().bigText(plain))
+			.setAutoCancel(true)
+			.setContentIntent(open)
+			.addAction(Notification.Action.Builder(null, "允许", answer(true)).build())
+			.addAction(Notification.Action.Builder(null, "不行", answer(false)).build())
+			.build()
+		manager.notify(ApprovalReceiver.NOTIFICATION, notification)
 	}
 
 	private fun alert(title: String, text: String, chat: String) {

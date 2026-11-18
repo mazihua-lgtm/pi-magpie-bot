@@ -417,6 +417,19 @@ fun SettingsScreen(model: AppModel) {
 			containerColor = palette.raised,
 			confirmButton = { TextButton(onClick = { showLog = false }) { Text("关闭", color = palette.text) } },
 			title = { Text("运行日志") },
+			dismissButton = {
+				TextButton(onClick = {
+					// Handed to whatever the user picks; nothing is uploaded by us.
+					val file = app.pimagpie.bot.Logs.export(context)
+					val uri = androidx.core.content.FileProvider.getUriForFile(context, "${context.packageName}.files", file)
+					context.startActivity(
+						Intent.createChooser(
+							Intent(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_STREAM, uri).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION),
+							"导出运行日志",
+						),
+					)
+				}) { Text("导出", color = palette.text) }
+			},
 			text = {
 				Text(
 					Logs.tail(),

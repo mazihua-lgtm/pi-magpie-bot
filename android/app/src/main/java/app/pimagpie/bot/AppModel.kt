@@ -162,6 +162,10 @@ class AppModel(application: Application) : AndroidViewModel(application) {
 	private fun listen() {
 		events?.cancel()
 		events = viewModelScope.launch {
+			// A phone that lost its network must not spend the battery reconnecting
+			// every second and a half; one that just hiccuped must not wait half a
+			// minute. Doubling from 1.5 s to 30 s, and back to 1.5 s on success.
+			var wait = 1_500L
 			while (isActive) {
 				try {
 					api.events().collect { handle(it) }
@@ -169,7 +173,8 @@ class AppModel(application: Application) : AndroidViewModel(application) {
 					// The process restarts after a crash or an update: keep trying.
 				}
 				connected = false
-				delay(1_500)
+				delay(wait)
+				wait = (wait * 2).coerceAtMost(30_000L)
 				if (api.health()?.optBoolean("ok", true) == false) {
 					needsKey()
 					return@launch
