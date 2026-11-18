@@ -79,7 +79,8 @@ stays running in the background. Let it run "without battery restrictions" in th
 or the phone may close it to save power and reminders will be late. 64-bit ARM phones only (nearly
 every recent Android phone).
 
-To build it yourself:
+A ready-built APK is in **[Releases](https://github.com/mazihua-lgtm/pi-magpie-bot/releases)**:
+download the newest one and install it. To build it yourself:
 
 ```sh
 pnpm install
