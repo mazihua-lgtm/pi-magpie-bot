@@ -86,6 +86,9 @@ cd android && gradle :app:assembleRelease  # needs JDK 17+ and the Android SDK
 The APK lands in `android/app/build/outputs/apk/release/`, about 100 MB. How the app talks to the
 assistant on the phone is in **[docs/app-api.md](docs/app-api.md)**.
 
+Phone control (reading the screen, tapping, typing) is **not built yet**: what the first version
+would do, and what always stays with you, is in **[docs/phone-control.md](docs/phone-control.md)**.
+
 ## Quick start
 
 **Nothing to install first.** Open a terminal and paste one line:

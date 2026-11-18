@@ -63,6 +63,8 @@ cd android && gradle :app:assembleRelease  # 需要 JDK 17+ 和 Android SDK
 
 安装包在 `android/app/build/outputs/apk/release/`，约 100 MB。App 和手机里的助理之间走的接口写在 **[docs/app-api.md](docs/app-api.md)**。
 
+手机操控（读屏、点按、输入）**还没做**：首版做到哪一步、哪些永远交还用户，写在 **[docs/phone-control.md](docs/phone-control.md)**。
+
 ## 快速开始 / Quick start
 
 **不用先装任何东西。** 打开终端（macOS：启动台里搜「终端」），粘贴这一行，回车：
