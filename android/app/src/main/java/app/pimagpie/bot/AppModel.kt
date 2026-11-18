@@ -162,19 +162,21 @@ class AppModel(application: Application) : AndroidViewModel(application) {
 	private fun listen() {
 		events?.cancel()
 		events = viewModelScope.launch {
-			// A phone that lost its network must not spend the battery reconnecting
-			// every second and a half; one that just hiccuped must not wait half a
-			// minute. Doubling from 1.5 s to 30 s, and back to 1.5 s on success.
-			var wait = 1_500L
+			val backoff = Backoff()
 			while (isActive) {
 				try {
-					api.events().collect { handle(it) }
+					api.events().collect { event ->
+						// The stream is up, so the next drop is a hiccup again rather
+						// than a continuation of the outage that ended the last one.
+						if (event is Event.Connected) backoff.succeeded()
+						handle(event)
+					}
 				} catch (_: Exception) {
 					// The process restarts after a crash or an update: keep trying.
 				}
 				connected = false
-				delay(wait)
-				wait = (wait * 2).coerceAtMost(30_000L)
+				delay(backoff.wait)
+				backoff.failed()
 				if (api.health()?.optBoolean("ok", true) == false) {
 					needsKey()
 					return@launch

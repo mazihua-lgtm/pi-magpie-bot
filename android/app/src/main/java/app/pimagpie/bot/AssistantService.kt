@@ -252,7 +252,7 @@ class AssistantService : Service() {
 			.addAction(Notification.Action.Builder(null, "允许", answer(true)).build())
 			.addAction(Notification.Action.Builder(null, "不行", answer(false)).build())
 			.build()
-		manager.notify(ApprovalReceiver.NOTIFICATION, notification)
+		manager.notify(ApprovalCards.idFor(id), notification)
 	}
 
 	private fun alert(title: String, text: String, chat: String) {

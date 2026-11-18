@@ -27,6 +27,53 @@ export interface WebExtensionOptions {
 	timeoutMs?: number;
 }
 
+/** This machine, its network, and the cloud metadata endpoints, in IPv4. */
+function isPrivateV4(ip: string): boolean {
+	const [a = 0, b = 0] = ip.split('.').map(Number);
+	return (
+		a === 0 ||
+		a === 10 ||
+		a === 127 ||
+		(a === 100 && b >= 64 && b <= 127) ||
+		(a === 169 && b === 254) ||
+		(a === 172 && b >= 16 && b <= 31) ||
+		(a === 192 && b === 168) ||
+		(a === 198 && (b === 18 || b === 19)) ||
+		a >= 224
+	);
+}
+
+/**
+ * The IPv4 an IPv6 address carries, when it carries one: `::ffff:127.0.0.1`,
+ * `::ffff:7f00:1` and `0:0:0:0:0:ffff:7f00:1` are the same address written
+ * three ways, and a check that only reads the dotted one lets the rest through.
+ */
+function embeddedV4(ip: string): string | undefined {
+	const [head = '', tail] = ip.split('::');
+	const parts = (text: string) => (text === '' ? [] : text.split(':'));
+	let left = parts(head);
+	let right = tail === undefined ? [] : parts(tail);
+	// A trailing dotted quad is two 16-bit groups written as four numbers.
+	const last = (tail === undefined ? left : right).at(-1) ?? '';
+	if (last.includes('.')) {
+		const bytes = last.split('.').map(Number);
+		if (bytes.length !== 4 || bytes.some((byte) => !Number.isInteger(byte) || byte < 0 || byte > 255)) return undefined;
+		const pair = [((bytes[0]! << 8) | bytes[1]!).toString(16), ((bytes[2]! << 8) | bytes[3]!).toString(16)];
+		if (tail === undefined) left = [...left.slice(0, -1), ...pair];
+		else right = [...right.slice(0, -1), ...pair];
+	}
+	const fill = 8 - left.length - right.length;
+	if (fill < 0 || (tail === undefined && fill !== 0)) return undefined;
+	const words = [...left, ...(Array<string>(fill).fill('0') as string[]), ...right].map((part) =>
+		/^[0-9a-f]{1,4}$/.test(part) ? Number.parseInt(part, 16) : Number.NaN,
+	);
+	if (words.length !== 8 || words.some((word) => Number.isNaN(word))) return undefined;
+	// `::a.b.c.d` and `::ffff:a.b.c.d` are IPv4 in disguise; anything else is not.
+	const leading = words.slice(0, 5).every((word) => word === 0);
+	if (!leading || (words[5] !== 0 && words[5] !== 0xffff)) return undefined;
+	return [words[6]! >> 8, words[6]! & 255, words[7]! >> 8, words[7]! & 255].join('.');
+}
+
 /**
  * Addresses a page fetched for the model must never be: this machine, its
  * network, and the cloud metadata endpoints. A model told to "open" one could
@@ -34,26 +81,12 @@ export interface WebExtensionOptions {
  */
 export function isPrivateAddress(address: string): boolean {
 	const ip = address.replace(/^\[|\]$/g, '').toLowerCase();
-	const mapped = /^::ffff:(.+)$/.exec(ip)?.[1];
-	if (mapped) return isPrivateAddress(mapped);
-	if (isIP(ip) === 4) {
-		const [a = 0, b = 0] = ip.split('.').map(Number);
-		return (
-			a === 0 ||
-			a === 10 ||
-			a === 127 ||
-			(a === 100 && b >= 64 && b <= 127) ||
-			(a === 169 && b === 254) ||
-			(a === 172 && b >= 16 && b <= 31) ||
-			(a === 192 && b === 168) ||
-			(a === 198 && (b === 18 || b === 19)) ||
-			a >= 224
-		);
-	}
-	if (isIP(ip) === 6) {
-		return ip === '::' || ip === '::1' || ip.startsWith('fe8') || ip.startsWith('fe9') || ip.startsWith('fea') || ip.startsWith('feb') || ip.startsWith('fc') || ip.startsWith('fd');
-	}
-	return false;
+	if (isIP(ip) === 4) return isPrivateV4(ip);
+	if (isIP(ip) !== 6) return false;
+	const v4 = embeddedV4(ip);
+	if (v4) return isPrivateV4(v4);
+	// ::, ::1, fe80::/10 and fc00::/7 with the IPv4 forms already taken out.
+	return ip === '::' || ip === '::1' || /^(fe[89ab]|f[cd])/.test(ip);
 }
 
 /** Why this address may not be fetched, or undefined when it may. */

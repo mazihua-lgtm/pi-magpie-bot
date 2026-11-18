@@ -1,5 +1,6 @@
 package app.pimagpie.bot
 
+import android.app.NotificationManager
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
@@ -15,11 +16,16 @@ class ApprovalReceiver : BroadcastReceiver() {
 		if (intent.action != ACTION) return
 		val id = intent.getStringExtra(EXTRA_ID) ?: return
 		val allow = intent.getBooleanExtra(EXTRA_ALLOW, false)
+		// Each card has its own notification, so answering one leaves the others up.
+		val notification = ApprovalCards.idFor(id)
 		val pending = goAsync()
 		Thread {
-			try {
-				val session = context.getSharedPreferences("bot", android.content.Context.MODE_PRIVATE).getString("sid", null)
-				if (session != null) {
+			val status = try {
+				val session = context.getSharedPreferences("bot", Context.MODE_PRIVATE).getString("sid", null)
+				if (session == null) {
+					Logs.add("[app] could not answer an approval: no session")
+					-1
+				} else {
 					val connection = java.net.URL("${Runner.BASE}/api/approvals/$id").openConnection() as java.net.HttpURLConnection
 					connection.requestMethod = "POST"
 					connection.setRequestProperty("Cookie", "sid=$session")
@@ -28,23 +34,27 @@ class ApprovalReceiver : BroadcastReceiver() {
 					connection.readTimeout = 10_000
 					connection.doOutput = true
 					connection.outputStream.use { it.write(JSONObject().put("allow", allow).toString().toByteArray()) }
-					connection.responseCode
+					val code = connection.responseCode
 					connection.disconnect()
+					code
 				}
 			} catch (error: Exception) {
 				Logs.add("[app] could not answer an approval: ${error.message}")
-			} finally {
-				pending.finish()
+				-1
 			}
+			if (ApprovalCards.dismissAfter(status)) {
+				context.getSystemService(NotificationManager::class.java).cancel(notification)
+				ApprovalCards.forget(id)
+			} else {
+				Logs.add("[app] the answer did not reach the bot (HTTP $status); the card stays up to be pressed again")
+			}
+			pending.finish()
 		}.start()
-		// The card is answered: take it down now, whatever the answer does.
-		context.getSystemService(android.app.NotificationManager::class.java).cancel(NOTIFICATION)
 	}
 
 	companion object {
 		const val ACTION = "app.pimagpie.bot.APPROVAL"
 		const val EXTRA_ID = "id"
 		const val EXTRA_ALLOW = "allow"
-		const val NOTIFICATION = 90_001
 	}
 }

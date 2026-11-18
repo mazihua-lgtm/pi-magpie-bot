@@ -84,6 +84,25 @@ describe('which addresses a page may come from', () => {
 			expect(isPrivateAddress(address), address).toBe(false);
 		}
 	});
+
+	it('reads the IPv4 written into an IPv6, however it is written', () => {
+		// The same three addresses as above, in the hex forms a URL may carry:
+		// ::ffff:7f00:1 is 127.0.0.1, ::ffff:a9fe:a9fe is 169.254.169.254.
+		for (const address of [
+			'::ffff:7f00:1',
+			'::ffff:7F00:1',
+			'0:0:0:0:0:ffff:7f00:1',
+			'::ffff:a9fe:a9fe',
+			'::ffff:c0a8:101',
+			'::ffff:a00:1',
+			'::7f00:1',
+		]) {
+			expect(isPrivateAddress(address), address).toBe(true);
+		}
+		for (const address of ['::ffff:808:808', '0:0:0:0:0:ffff:808:808', '2606:4700::1111']) {
+			expect(isPrivateAddress(address), address).toBe(false);
+		}
+	});
 });
 
 /** A tool of the extension, run as the harness would, with a fake network behind it. */
@@ -163,6 +182,16 @@ describe('web_fetch', () => {
 		for (const url of ['file:///etc/passwd', 'ftp://example.com/', 'http://localhost:8787/api/chats', 'http://127.0.0.1:3425/v1/models', 'http://[::1]/', 'http://169.254.169.254/latest/meta-data', 'http://router.example/admin', 'not a url']) {
 			const result = await run({ url });
 			expect(result.isError, url).toBe(true);
+		}
+		expect(requested).toEqual([]);
+	});
+
+	it('refuses this machine written as an IPv6, and never asks for the page', async () => {
+		const { run, requested } = tool('web_fetch', {});
+		for (const url of ['http://[::ffff:7f00:1]:8787/api/chats', 'http://[0:0:0:0:0:ffff:7f00:1]/', 'http://[::ffff:a9fe:a9fe]/latest/meta-data', 'http://[::7f00:1]/']) {
+			const result = await run({ url });
+			expect(result.isError, url).toBe(true);
+			expect(result.text, url).toContain('本机');
 		}
 		expect(requested).toEqual([]);
 	});

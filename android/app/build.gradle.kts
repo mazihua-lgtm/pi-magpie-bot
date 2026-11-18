@@ -88,4 +88,9 @@ dependencies {
 	implementation("androidx.core:core-ktx:1.15.0")
 	implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
 	debugImplementation("androidx.compose.ui:ui-tooling")
+
+	// The two pieces of phone-side logic that broke once: the reconnect wait and
+	// the shade's notification ids. Both are plain Kotlin, so they are tested here
+	// rather than on a device.
+	testImplementation("junit:junit:4.13.2")
 }
