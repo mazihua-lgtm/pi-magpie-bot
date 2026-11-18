@@ -126,7 +126,9 @@ export async function routeApp(req: AppRequest): Promise<boolean> {
 		}
 		if (method === 'POST') {
 			const body = await req.readJson(SMALL_BODY);
-			const note = await app.saveProvider(body.preset, body.key);
+			// A preset vendor, or `custom` with an endpoint of the user's own; the
+			// app decides which and refuses anything that is neither.
+			const note = await app.saveProvider(body);
 			// The new models load at the next start: restart once the answer is
 			// out, not before, or the app never hears that it worked.
 			req.response.once('finish', () => app.restart());

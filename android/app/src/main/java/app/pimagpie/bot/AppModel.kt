@@ -541,11 +541,23 @@ class AppModel(application: Application) : AndroidViewModel(application) {
 
 	/** Adds a provider key; the process restarts to load its models. */
 	fun addKey(vendor: Vendor, key: String, done: (String?) -> Unit) {
+		save(done) { if (boot == Boot.NeedsKey) api.setupKey(vendor.preset, key.trim()) else api.addProvider(vendor.preset, key.trim()) }
+	}
+
+	/** An endpoint of the user's own, which magpie has no preset for. */
+	fun addCustomProvider(name: String, url: String, models: String, key: String, done: (String?) -> Unit) {
+		save(done) {
+			if (boot == Boot.NeedsKey) api.setupCustomProvider(name.trim(), url.trim(), models.trim(), key.trim())
+			else api.addCustomProvider(name.trim(), url.trim(), models.trim(), key.trim())
+		}
+	}
+
+	private fun save(done: (String?) -> Unit, call: suspend () -> String) {
 		viewModelScope.launch {
 			try {
-				val note = if (boot == Boot.NeedsKey) api.setupKey(vendor.preset, key.trim()) else api.addProvider(vendor.preset, key.trim())
+				val note = call()
 				done(null)
-				say(note.ifBlank { "已添加 ${vendor.name}，助理正在重启…" })
+				say(note.ifBlank { "已添加，助理正在重启…" })
 				delay(4_000)
 				refreshModels()
 			} catch (error: Exception) {

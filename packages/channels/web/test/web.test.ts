@@ -50,7 +50,7 @@ describe('web channel', () => {
 		const { channel, url } = await start();
 		const page = await fetch(`${url}/`);
 		expect(page.status).toBe(200);
-		expect(await page.text()).toContain('我的助理');
+		expect(await page.text()).toContain('喜鹊');
 
 		// No cookie means a fresh session; find the one the server minted.
 		const cookie = page.headers.get('set-cookie')?.split(';')[0] ?? '';

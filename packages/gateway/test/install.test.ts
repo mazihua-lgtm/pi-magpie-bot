@@ -4,7 +4,7 @@ import { createServer, type Server } from 'node:http';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { addProvider, checksumFor, ensureFreeRoute, FREE_GROUP, hasConfiguredModel, installMagpie, releaseAsset } from '../src/install.ts';
+import { addProvider, checksumFor, ensureFreeRoute, FREE_GROUP, hasConfiguredModel, installMagpie, providerId, releaseAsset } from '../src/install.ts';
 
 const scratch: string[] = [];
 const servers: Server[] = [];
@@ -248,5 +248,42 @@ exit 1
 		expect(said).toContain('refused');
 		expect(said).toContain('401');
 		expect(said).not.toContain('sk-secret-123');
+	});
+
+	it('hands magpie an endpoint of its own, key or no key', async () => {
+		const dir = await tempDir();
+		const calls = join(dir, 'calls');
+		const fake = join(dir, 'magpie');
+		await writeFile(fake, `#!/bin/sh\necho "$@" >> "${calls}"\n`);
+		await chmod(fake, 0o755);
+
+		await addProvider({
+			binary: fake,
+			preset: 'example',
+			key: 'sk-1',
+			custom: { name: '我常用的中转', url: 'https://api.example.com/v1', models: ['gpt-5', 'claude-sonnet-5-5'] },
+		});
+		await addProvider({
+			binary: fake,
+			preset: 'ollama',
+			key: '',
+			custom: { name: '家里的服务器', url: 'http://192.168.1.9:11434/v1', models: ['qwen3:32b'] },
+		});
+
+		const lines = (await readFile(calls, 'utf8')).trim().split('\n');
+		expect(lines[0]).toBe('provider add example name=我常用的中转 url=https://api.example.com/v1 models=gpt-5,claude-sonnet-5-5 key=sk-1');
+		// An endpoint on the LAN takes no key, and the arrow is not passed empty.
+		expect(lines[1]).toBe('provider add ollama name=家里的服务器 url=http://192.168.1.9:11434/v1 models=qwen3:32b');
+	});
+
+	it('files a custom vendor under a name magpie takes', () => {
+		expect(providerId('My Relay', 'https://api.example.com/v1')).toBe('my-relay');
+		expect(providerId('我常用的中转', 'https://api.example.com/v1')).toBe('example');
+		expect(providerId('家里的服务器', 'http://192.168.1.9:11434/v1')).toBe('custom');
+		expect(providerId('api.deepseek.com', 'https://api.deepseek.com')).toBe('api.deepseek.com');
+		expect(providerId('', 'https://open.bigmodel.cn/api/paas/v4')).toBe('open');
+		// A name that would read as a flag to magpie loses its dashes rather than
+		// reaching the command line as one.
+		expect(providerId('--help', 'not a url')).toBe('help');
 	});
 });

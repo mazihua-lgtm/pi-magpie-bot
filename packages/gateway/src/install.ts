@@ -221,10 +221,52 @@ async function groupShow(binary: string, id: string): Promise<string | undefined
 
 export interface AddProviderOptions {
 	binary: string;
-	/** magpie's name for the vendor, as `magpie presets` lists it. */
+	/** magpie's id for the vendor: a preset's name, or one made for a custom vendor. */
 	preset: string;
-	/** The key itself. Never logged, never put in an error message. */
+	/** The key itself. Never logged, never put in an error message. magpie requires one on a custom vendor. */
 	key: string;
+	/** A vendor magpie has no preset for: an OpenAI-compatible endpoint and the models to name. */
+	custom?: CustomProvider;
+}
+
+/** An endpoint someone runs or subscribes to, whose magpie preset does not exist. */
+export interface CustomProvider {
+	name: string;
+	/** The base URL, e.g. `https://api.example.com/v1`. */
+	url: string;
+	models: string[];
+}
+
+/**
+ * The id magpie files a custom vendor under. An ASCII name is used as it is,
+ * kebab-cased; a name in Chinese (or anything else magpie's ids do not take)
+ * falls back to the endpoint's host, minus `api.`, which is what people
+ * recognise: `api.deepseek.com` becomes `deepseek`.
+ */
+export function providerId(name: string, url: string): string {
+	const ascii = name
+		.trim()
+		.toLowerCase()
+		.replace(/[^a-z0-9._-]+/g, '-')
+		.replace(/^[-.]+|[-.]+$/g, '')
+		.slice(0, 40);
+	if (/^[a-z0-9][a-z0-9._-]*$/.test(ascii)) return ascii;
+	let host = '';
+	try {
+		host = new URL(url).hostname;
+	} catch {
+		host = '';
+	}
+	// An address is not a name: `192.168.1.9` would become "192", which tells
+	// nobody anything, so a bare IP gets the plain id instead.
+	if (/^[0-9.]+$/.test(host) || host.includes(':')) return 'custom';
+	const fromHost = host
+		.replace(/^api\./, '')
+		.split('.')[0]
+		?.toLowerCase()
+		.replace(/[^a-z0-9-]+/g, '-')
+		.replace(/^-+|-+$/g, '');
+	return fromHost && /^[a-z0-9]/.test(fromHost) ? fromHost : 'custom';
 }
 
 /**
@@ -234,17 +276,22 @@ export interface AddProviderOptions {
  * the key struck out.
  */
 export async function addProvider(options: AddProviderOptions): Promise<void> {
+	const args = options.custom
+		? ['provider', 'add', options.preset, `name=${options.custom.name}`, `url=${options.custom.url}`, `models=${options.custom.models.join(',')}`, ...(options.key ? [`key=${options.key}`] : [])]
+		: ['provider', 'add', options.preset, options.key];
 	try {
-		await magpieRun(options.binary, ['provider', 'add', options.preset, options.key], 120_000);
+		await magpieRun(options.binary, args, 120_000);
 	} catch (error) {
-		const said = String((error as { stderr?: string }).stderr ?? '')
+		const last = String((error as { stderr?: string }).stderr ?? '')
 			.split('\n')
 			.map((line) => line.trim())
 			.filter(Boolean)
 			.at(-1);
-		throw new Error(
-			said ? `magpie refused that key: ${said.replace(/^magpie:\s*/i, '').replaceAll(options.key, '***')}` : 'magpie refused that key',
-		);
+		if (!last) throw new Error('magpie refused that key');
+		// A custom vendor's refusal can be about the URL or a model name rather
+		// than the key, but the key is never in it and never in this one.
+		const said = (options.key ? last.replaceAll(options.key, '***') : last).replace(/^magpie:\s*/i, '');
+		throw new Error(`magpie refused that key: ${said}`);
 	}
 }
 

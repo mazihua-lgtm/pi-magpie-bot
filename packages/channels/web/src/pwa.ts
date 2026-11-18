@@ -7,8 +7,8 @@
 import { readFileSync } from 'node:fs';
 
 export const MANIFEST = JSON.stringify({
-	name: '我的助理',
-	short_name: '助理',
+	name: '喜鹊',
+	short_name: '喜鹊',
 	description: '一个常驻的私人助理：记得你说过的话，到点提醒你。',
 	lang: 'zh-CN',
 	start_url: '/',

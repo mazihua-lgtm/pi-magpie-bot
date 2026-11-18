@@ -34,7 +34,7 @@ object Logs {
 		val dir = java.io.File(context.cacheDir, "diagnostics").apply { mkdirs() }
 		val file = java.io.File(dir, "pimagpie-diagnostics.txt")
 		val head = buildString {
-			appendLine("我的助理 ${app.pimagpie.bot.BuildConfig.VERSION_NAME} (${app.pimagpie.bot.BuildConfig.VERSION_CODE})")
+			appendLine("喜鹊 ${app.pimagpie.bot.BuildConfig.VERSION_NAME} (${app.pimagpie.bot.BuildConfig.VERSION_CODE})")
 			appendLine("Android ${android.os.Build.VERSION.RELEASE} / SDK ${android.os.Build.VERSION.SDK_INT} / ${android.os.Build.MODEL}")
 			appendLine("环境已解包: ${Payload.installed(context)}")
 			appendLine("时间: " + java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss", java.util.Locale.CHINA).format(java.util.Date()))

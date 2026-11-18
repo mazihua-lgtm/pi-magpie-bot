@@ -55,6 +55,64 @@ export interface OutgoingInput {
 	images?: unknown;
 }
 
+/** What the key sheet hands over: a vendor magpie has a preset for, or one it does not. */
+export interface ProviderKey {
+	preset?: unknown;
+	key?: unknown;
+	/** An OpenAI-compatible endpoint magpie has no preset for: a relay, a local server, a vendor of its own. */
+	custom?: { name?: unknown; url?: unknown; models?: unknown; key?: unknown };
+}
+
+/** The same after checking: what the host is asked to hand to magpie. */
+export interface SavedProvider {
+	preset?: string;
+	key: string;
+	custom?: { name: string; url: string; models: string[] };
+}
+
+const CONTROLS = /[\u0000-\u001f\u007f]/;
+const MODEL_NAME = /^[A-Za-z0-9][A-Za-z0-9._:/-]{0,80}$/;
+
+/**
+ * A vendor magpie has no preset for: a relay, a vendor of one country, a server
+ * someone runs at home. The app's own list cannot keep up with those, so only
+ * the shape is checked here — a name, an http(s) endpoint, the models to ask it
+ * for, and a key. magpie requires a key on every custom vendor it files; an
+ * endpoint that needs none can take any one-word placeholder, but it is sent
+ * as a Bearer token, so a public endpoint that rejects a bogus key will still
+ * refuse. Whether it
+ * answers is magpie's to find out, and its own words are what the user sees.
+ */
+export function parseCustomProvider(input: unknown): SavedProvider {
+	const form = (input && typeof input === 'object' ? input : {}) as { name?: unknown; url?: unknown; models?: unknown; key?: unknown };
+	const name = typeof form.name === 'string' ? form.name.trim() : '';
+	if (!name || name.length > 40 || CONTROLS.test(name)) throw new AppError(400, '名字没填，或者太长 / the name is missing or too long');
+	const url = typeof form.url === 'string' ? form.url.trim() : '';
+	let parsed: URL;
+	try {
+		parsed = new URL(url);
+	} catch {
+		throw new AppError(400, '接口地址不对，要 http:// 或 https:// 开头 / the endpoint is not a URL');
+	}
+	if ((parsed.protocol !== 'http:' && parsed.protocol !== 'https:') || url.length > 300 || /\s/.test(url)) {
+		throw new AppError(400, '接口地址不对，要 http:// 或 https:// 开头 / the endpoint is not a URL');
+	}
+	const models = (typeof form.models === 'string' ? form.models : '')
+		.split(/[,，、\s]+/)
+		.map((model) => model.trim())
+		.filter(Boolean);
+	if (models.length === 0) throw new AppError(400, '模型名没填 / no model name');
+	if (models.length > 8) throw new AppError(400, '最多写 8 个模型 / at most 8 models');
+	for (const model of models) {
+		if (!MODEL_NAME.test(model)) throw new AppError(400, `模型名不对：${model} / not a model name`);
+	}
+	// magpie requires a key on every custom vendor, so an empty one can only end
+	// in an English refusal downstream. Refuse here in the user's language.
+	const key = typeof form.key === 'string' ? form.key.trim() : '';
+	if (!key || key.length > 500 || /\s/.test(key)) throw new AppError(400, '密钥没填 / the key is missing');
+	return { key, custom: { name, url, models } };
+}
+
 /** What the HTTP side calls. Every `owner` is the phone's session id. */
 export interface AppBackend {
 	chats(owner: string): AppChat[];
@@ -78,7 +136,7 @@ export interface AppBackend {
 	deleteMemory(owner: string, name: string): Promise<void>;
 	vendors(): AppVendor[];
 	/** Saves a key; the answer is a sentence for the user. Call `restart` once the answer is out. */
-	saveProvider(preset: unknown, key: unknown): Promise<string>;
+	saveProvider(input: ProviderKey): Promise<string>;
 	restart(): void;
 	subscribe(listener: (owner: string, event: AppEvent) => void): () => void;
 }
@@ -98,7 +156,7 @@ export interface AppServiceOptions {
 	channel?: string;
 	vendors?: AppVendor[];
 	/** Adds a model key (`magpie provider add`); absent where this machine cannot. */
-	saveProvider?: (input: { preset: string; key: string }) => Promise<string>;
+	saveProvider?: (input: SavedProvider) => Promise<string>;
 	/** Called after a key was saved and the answer sent: the process restarts to load the new models. */
 	restart?: () => void;
 	/** Names a chat after its first answer. Defaults to asking the default model. */
@@ -484,22 +542,34 @@ export class AppService implements AppBackend {
 		return this.options.vendors ?? [];
 	}
 
-	async saveProvider(preset: unknown, key: unknown): Promise<string> {
+	async saveProvider(input: ProviderKey): Promise<string> {
 		const save = this.options.saveProvider;
 		if (!save) throw new AppError(501, '这台机器上不能在这里添加模型 / keys cannot be added here');
+		if (input.custom !== undefined) return await this.saveCustomProvider(input.custom, save);
 		// A preset is one of magpie's own ids (`magpie presets`), and magpie is
 		// what decides whether it knows one. The vendor list is only what the
 		// first run offers: the free-allowance guide names vendors that list
 		// leaves out, and holding it to that list is how a guide row ends up
 		// advertising a vendor the app then refuses. The shape is still checked,
 		// so nothing lands in argument position that magpie would read as a flag.
+		const preset = input.preset;
 		if (typeof preset !== 'string' || !/^[a-z0-9][a-z0-9._-]{0,40}$/.test(preset)) {
 			throw new AppError(400, '没有这家厂商 / unknown vendor');
 		}
-		const trimmed = typeof key === 'string' ? key.trim() : '';
+		const trimmed = typeof input.key === 'string' ? input.key.trim() : '';
 		if (!trimmed || trimmed.length > 500 || /\s/.test(trimmed)) throw new AppError(400, '密钥格式不对 / the key does not look right');
 		try {
 			return await save({ preset, key: trimmed });
+		} catch (error) {
+			throw new AppError(400, (error as Error).message.split('\n')[0] ?? '没加上 / not added');
+		}
+	}
+
+	/** A vendor magpie has no preset for; see `parseCustomProvider` for what counts. */
+	private async saveCustomProvider(input: NonNullable<ProviderKey['custom']>, save: (saved: SavedProvider) => Promise<string>): Promise<string> {
+		const saved = parseCustomProvider(input);
+		try {
+			return await save(saved);
 		} catch (error) {
 			throw new AppError(400, (error as Error).message.split('\n')[0] ?? '没加上 / not added');
 		}

@@ -51,7 +51,7 @@ function fakeBackend() {
 		writeMemory: async (owner, name, content) => void calls.push(['writeMemory', owner, name, content]),
 		deleteMemory: async (owner, name) => void calls.push(['deleteMemory', owner, name]),
 		vendors: () => [{ preset: 'deepseek', name: 'DeepSeek', signupUrl: 'https://platform.deepseek.com' }, { preset: 'x', name: 'X' }],
-		saveProvider: async (preset, key) => (calls.push(['saveProvider', preset, key]), '加好了'),
+		saveProvider: async (input) => (calls.push(['saveProvider', input.preset ?? input.custom?.name, input.custom ? input.custom.key : input.key]), '加好了'),
 		restart: () => {
 			restarts += 1;
 		},
@@ -264,9 +264,16 @@ describe('the other routes', () => {
 		});
 		const saved = await call(url, 'POST', '/api/providers', { preset: 'deepseek', key: 'sk-1' });
 		expect(await saved.json()).toEqual({ ok: true, note: '加好了' });
+		// An endpoint of the user's own goes down the same path and is passed on
+		// whole: the app, not this route, decides whether it is one it knows.
+		const own = await call(url, 'POST', '/api/providers', { custom: { name: '家里的服务器', url: 'http://192.168.1.9:11434/v1', models: 'qwen3:32b', key: 'sk-1' } });
+		expect(await own.json()).toEqual({ ok: true, note: '加好了' });
 		await new Promise((resolve) => setTimeout(resolve, 50));
-		expect(fake.restarts()).toBe(1);
-		expect(fake.calls).toEqual([['saveProvider', 'deepseek', 'sk-1']]);
+		expect(fake.restarts()).toBe(2);
+		expect(fake.calls).toEqual([
+			['saveProvider', 'deepseek', 'sk-1'],
+			['saveProvider', '家里的服务器', 'sk-1'],
+		]);
 	});
 
 	it('keeps the guards: JSON bodies only, local Host only, a password when set, a sid that can be a target', async () => {

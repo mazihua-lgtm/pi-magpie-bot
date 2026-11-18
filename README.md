@@ -1,4 +1,4 @@
-# pi-magpie-bot
+# 喜鹊 · pi-magpie-bot
 
 <p align="center">
   <img src="docs/banner.png" alt="pi-magpie-bot" width="860">
@@ -12,26 +12,26 @@
   <img src="https://img.shields.io/badge/Android%20%C2%B7%20Web%20%C2%B7%20Telegram-channels-5b8def" alt="channels">
 </p>
 
-<p align="center">中文 · <b><a href="README.en.md">English</a></b> · <a href="#安卓-app--android">安卓 App</a> · <a href="#快速开始--quick-start">快速开始</a> · <a href="#接到-telegram">Telegram</a> · <a href="docs/architecture.md">架构</a> · <a href="docs/own-models.md">自带模型</a></p>
+<p align="center">中文 · <b><a href="README.en.md">English</a></b> · <a href="#安卓-app--android">安卓 App</a> · <a href="#快速开始--quick-start">电脑 / 服务器</a> · <a href="#接到-telegram">Telegram</a> · <a href="docs/architecture.md">架构</a> · <a href="docs/own-models.md">自带模型</a></p>
 
-**一个一直在线、会记事、会提醒你、能上网查最新消息的私人助理。** 装在你自己的安卓手机上，或者跑在你的电脑、服务器上，用免费模型就能开口说话：不用注册账号，不用 API key。
+**喜鹊是一个一直在线、会记事、会提醒你、能上网查最新消息的私人助理，整只装在你自己的安卓手机里。** 也可以跑在电脑或服务器上，从浏览器或 Telegram 用。默认用免费模型开口说话：不用注册账号，不用 API key。
 
-> An always-on personal assistant you run yourself: memory, reminders, free models out of the box (no account, no API key).
+> 喜鹊 is an always-on personal assistant that lives in your own Android phone — memory, reminders, web search, free models out of the box (no account, no API key). It also runs on a computer or server behind a browser or Telegram.
 
 ```
 你：十分钟后提醒我关火
-助理：好，10 分钟后我叫你。
+喜鹊：好，10 分钟后我叫你。
 
-（10 分钟后，即使电脑刚重启过）
-助理：该关火啦。
+（10 分钟后，哪怕手机刚重启过）
+喜鹊：该关火啦。
 ```
 
 ## 为什么做这个 / Why this exists
 
 Grok Bot 这类产品好用，但你的对话、记忆、日程都在别人服务器上，还要按月付费。这个项目把同样的东西拆开给你：
 
-- **不要钱就能用**：免费池由 [our-free-model](https://github.com/Ebony-Vinyl/dsh-our-free-model) 提供，插件由社区维护，不用注册账号、不用 key。第一次启动时自动装好、自动登录，之后就不用人管；想更稳、想用大模型，换成自己的就行，一个模型名就能切。
-- **记录在你手里**：对话、记忆、定时任务都是本地 SQLite 和 Markdown 文件，拷走就是迁移（模型那一头见下面的「隐私」）。
+- **不要钱就能用**：免费池由 [our-free-model](https://github.com/Ebony-Vinyl/dsh-our-free-model) 提供，第一次启动自动装好、自动登录，之后就不用人管；免费池之外还有 OVH、Pollinations 两个免注册的公共端点兜底，429 时自动换路。想更稳、想用大模型，换成自己的 key 或自己的接口就行。
+- **记录在你手里**：对话、记忆、定时任务都是手机（或你自己机器）上的 SQLite 和 Markdown 文件，拷走就是迁移（模型那一头见下面的「隐私」）。
 - **断电不死**：消息先落盘再处理，重启后照常接着干，不会同一句回答你两遍；真被掐断在回答一半的那条，它会主动跟你说一声「刚才那条中断了」。
 - **能碰到的东西要你点头**：让它读写你的文件夹、执行命令，每次都要在聊天里回「是」。
 
@@ -41,20 +41,22 @@ Grok Bot 这类产品好用，但你的对话、记忆、日程都在别人服�
   <img src="docs/android.png" alt="安卓 App：首页、记住一件事、对话列表" width="860">
 </p>
 
-整个助理装进一个安卓 App：模型网关、记忆、提醒都跑在手机里，不用电脑，不用服务器。界面是原生的（Jetpack Compose），照着 Grok 这类 App 的手感做：
+整个助理装进一个安卓 App：模型网关、记忆、提醒都跑在手机里，不用电脑，不用服务器，不上架应用商店。界面是原生的（Jetpack Compose）：
 
 - **多个对话**：侧栏里搜索、置顶、重命名、删除；新对话的标题由模型自己起。
 - **边想边说**：回答一个字一个字出来，思考过程和它做过的事（「搜索了 4 次 · 看了 1 个网页」）折成一行，点开看细节；随时可以停。
 - **能上网**：问新闻、天气、价格这类会变的事，它先搜再答（国内能用的必应），并说出处。
 - **记性和提醒**：「记住……」「明早七点叫我」说一句就行；提醒页、记忆页里也能自己加、改、删。到点了锁着屏也会来通知。
 - **好读**：标题、列表、代码块（一键复制）、表格都排好版；回答可以复制、分享、朗读。
-- **模型随你换**：每段对话可以选不同的模型，会深度思考的模型多一个「深度思考」开关；能看图的模型可以发照片；设置里填一个 key 就接上 DeepSeek、Kimi、通义等 8 家。
-- **额度不够有去处**：免费线路排队或者到量时，设置里有一页「免费额度怎么拿」：智谱、百炼、硅基流动、魔搭、Google、Groq、OpenRouter 这几家注册就送额度，点「去注册」到官网，回来填 Key 就接着用。
+- **模型随你换**：每段对话可以选不同的模型，会深度思考的模型多一个「深度思考」开关；能看图的模型可以发照片。
+- **填个 key 就接大厂**：设置里选厂商贴 key，接上 DeepSeek、Kimi、通义等 8 家。
+- **额度不够有去处**：免费线路排队或到量时，设置里有一页「免费额度怎么拿」：智谱、百炼、硅基流动、魔搭、Google、Groq、OpenRouter 注册就送额度，点「去注册」到官网，回来填 key 就接着用。
+- **自己的接口也能接**：OpenAI 兼容的中转站、公司的私有部署、家里电脑上的 Ollama，在设置里填名字、地址、模型名和 key 就进模型列表，不用等我们收录。真不要 key 的公共端点填个 none 占位。
 - **语音输入**、深色 / 浅色 / 跟随系统。
 
-第一次打开要在手机上准备运行环境（约 300 MB，几分钟），之后它就常驻后台。请在系统里允许它「不受省电限制」，否则手机可能为了省电把它关掉，提醒就不准时了。只支持 64 位 ARM 手机（近几年的安卓手机基本都是）。
+现成的安装包在 **[Releases](https://github.com/mazihua-lgtm/pi-magpie-bot/releases)**：下载最新 APK 装上就行。第一次打开要在手机里解出运行环境（约 300 MB，几分钟），之后常驻后台；请在系统里允许它「不受省电限制」，否则手机可能为了省电把它关掉，提醒就不准时了。只支持 64 位 ARM 手机（近几年的安卓手机基本都是）。
 
-现成的安装包在 **[Releases](https://github.com/mazihua-lgtm/pi-magpie-bot/releases)** 里，下载最新那个 APK 装上就行。自己打包：
+自己打包：
 
 ```sh
 pnpm install
@@ -66,7 +68,7 @@ cd android && gradle :app:assembleRelease  # 需要 JDK 17+ 和 Android SDK
 
 手机操控（读屏、点按、输入）**还没做**：首版做到哪一步、哪些永远交还用户，写在 **[docs/phone-control.md](docs/phone-control.md)**。
 
-## 快速开始 / Quick start
+## 快速开始 / Quick start（电脑、服务器）
 
 **不用先装任何东西。** 打开终端（macOS：启动台里搜「终端」），粘贴这一行，回车：
 
@@ -92,7 +94,7 @@ pi-magpie-bot uninstall   # 卸载（聊天记录和记忆默认留着）
 
 ### 隐私：一句话说清
 
-对话记录、记忆、日程都存在你自己的电脑上。但**每句话都要发给模型才能得到回答**：用免费池时，内容会经过免费池背后的第三方渠道，别对它说密码、证件号这类敏感内容；换成自己的 key，就只发给你选的那家厂商。
+对话记录、记忆、日程都存在你自己的设备上。但**每句话都要发给模型才能得到回答**：用免费池时，内容会经过免费池背后的第三方渠道，别对它说密码、证件号这类敏感内容；换成自己的 key 或自己的接口，就只发给你选的那家。
 
 ### 手动安装（会用终端的）
 
@@ -103,13 +105,13 @@ pnpm install
 pnpm start            # 启动
 ```
 
-第一步之后就不用人管了：本机没有 magpie 的话它会自己下载官方发布版（发布了 SHA256SUMS 时先比对再装，没有就照装），装上免费模型插件、登录它的匿名池、建好 `free` 路由组，最后才去连网关。想连 `.env` 一起生成就改用 `./install.sh`。然后打开 <http://127.0.0.1:8787>。
+第一步之后就不用人管了：本机没有 magpie 的话它会自己下载官方发布版（发布了 SHA256SUMS 时先比对再装，没有就照装），装上免费模型、建好 `free` 路由组，最后才去连网关。想连 `.env` 一起生成就改用 `./install.sh`。然后打开 <http://127.0.0.1:8787>。
 
 ### 免费池要不要配置
 
-不用。第一次启动时 bot 自己装好插件、用它自己的匿名池账号登录、建好 `group/free`，完了才去连网关——上面那张截图就是这么聊出来的，没人碰过终端。
+不用。第一次启动时 bot 自己装好、登录匿名池、建好 `group/free`——上面那张截图就是这么聊出来的，没人碰过终端。免费线路忙时它会自己换模型，429 会退避重试，不会卡死。
 
-想要更多额度，或者在匿名池排队时换条路，可以打开插件自己的控制台接一个渠道：
+想要更多额度，可以打开插件自己的控制台接一个渠道：
 
 ```sh
 magpie plugin login our-free-model
@@ -153,11 +155,17 @@ magpie plugin login our-free-model
 
 ## 进阶：用你自己的模型 / Bring your own model
 
-免费池的代价是排队和限制。想稳定、想用大模型，两条路：
+免费池的代价是排队和限制。想稳定、想用大模型，三条路：
 
-**自己的 key** —— 不用开终端：免费池给不出模型时，bot 自己会把「还差一步」的页面挂出来，页面上直接有厂商下拉框和一个 key 输入框，贴进去点「保存并继续」，同一个进程就接着启动、进聊天页。想在聊天里加第二次，或者用命令行，`magpie provider add deepseek sk-…`（`magpie presets` 看全部厂商），或者打开 `magpie web`（默认 <http://127.0.0.1:3430>）在页面里加。
+**自己的 key** —— 不用开终端：免费池给不出模型时，bot 自己会把「还差一步」的页面挂出来，页面上直接有厂商下拉框和一个 key 输入框，贴进去点「保存并继续」，同一个进程就接着启动、进聊天页。安卓 App 里随时在设置里加。用命令行的话，`magpie provider add deepseek sk-…`（`magpie presets` 看全部厂商），或者打开 `magpie web` 在页面里加。
 
-**本地模型** — Ollama / vLLM / LM Studio 起一个 OpenAI 兼容端点，然后：
+**自己的接口** —— 任何 OpenAI 兼容端点：中转站、公司的私有部署、家里电脑上的模型。安卓 App 的设置里有「接入自己的接口」，填名字、地址、模型名和 key 就行；命令行：
+
+```sh
+magpie provider add 我的中转 url=https://api.example.com/v1 models=gpt-5,claude-sonnet-5-5 key=sk-…
+```
+
+**本地模型** — Ollama / vLLM / LM Studio 起一个 OpenAI 兼容端点，就是上一条：
 
 ```sh
 magpie provider add ollama url=http://127.0.0.1:11434/v1 models=qwen3:8b
@@ -176,7 +184,7 @@ cp .env.example .env        # 至少填 WEB_PASSWORD；要接 Telegram 等再填
 docker compose up -d        # 在仓库根目录跑，.env 就在旁边
 ```
 
-打开 `http://<服务器地址>:8787`，输入 `WEB_PASSWORD` 就能聊天。手机浏览器里点「添加到主屏幕」，它就有图标、全屏打开，用起来跟 App 一样（不用装任何东西，也不用上架应用商店）。容器里的 bot 自己带着 magpie（第一次启动要下载，要几分钟），没有网关密钥、没有 `exec` 命令要敲。对话、记忆、定时任务和 magpie 的 key 都在一个数据卷里，重建容器不丢。
+打开 `http://<服务器地址>:8787`，输入 `WEB_PASSWORD` 就能聊天。手机浏览器里点「添加到主屏幕」，它就有图标、全屏打开，用起来跟 App 一样。容器里的 bot 自己带着 magpie（第一次启动要下载，要几分钟），没有网关密钥、没有 `exec` 命令要敲。对话、记忆、定时任务和 magpie 的 key 都在一个数据卷里，重建容器不丢。
 
 没有可用模型时 bot 不会反复重启：网页上有一页说明，还带一个框，贴上自己的 key（页面给了各家的注册链接）就行。云端这个框**必须**先输 `WEB_PASSWORD` 才能保存，没设密码就不显示，避免被人顺手改了你的 key。
 
@@ -184,7 +192,7 @@ docker compose up -d        # 在仓库根目录跑，.env 就在旁边
 
 想把 magpie 单独放一个容器（比如多个 bot 共用一个网关），用 `docker compose -f compose.split.yml up -d`，步骤写在那个文件的开头。
 
-> 说明：免费池按出口 IP 限量，云服务器上大概率拿不到免费模型，云端请自带 key 或接本地模型。容器里下载 magpie 要能访问 github.com，下不来时日志会直说，并退回上面那一页。
+> 说明：免费池按出口 IP 限量，云服务器上大概率拿不到免费模型，云端请自带 key 或接自己的接口。容器里下载 magpie 要能访问 github.com，下不来时日志会直说，并退回上面那一页。
 
 ## 它能做什么 / What it does
 
@@ -195,7 +203,7 @@ docker compose up -d        # 在仓库根目录跑，.env 就在旁边
 | 上网 | 「今天有什么新闻？」 | `web_search`（cn.bing.com）和 `web_fetch`，拒绝访问本机和内网地址 |
 | 看图 | 在 App 里发照片 | 模型支持看图才开，图片随消息交给模型 |
 | 记事 | 「记住我的车是蓝色比亚迪」 | `memory/` 下的 Markdown，索引每次进上下文，正文按需读 |
-| 提醒 | 「明早七点叫我」 | `schedules` 表 + 每 2 秒看一次（`TICK_MS` 可改），进程挂了下次启动补一次 |
+| 提醒 | 「明早七点叫我」 | `schedules` 表，进程挂了下次启动补一次 |
 | 长任务先回一句 | 它自己判断 | `send_message` 工具先发后干 |
 | 读写文件 / 执行命令 | 在 `.env` 设 `WORKSPACE_DIR` | 每次执行前发审批卡，回「是」才动 |
 | 安卓 App | 装 APK | 手机里跑完整助理，原生界面经本机回环口说话 |
@@ -227,11 +235,11 @@ docker compose up -d        # 在仓库根目录跑，.env 就在旁边
 
 ## 它是怎么搭的 / How it is built
 
-站着不动就得靠靠谱的轮子，这个项目只在没人做的地方写自己的代码：
+站在靠谱的轮子上，这个项目只在没人做的地方写自己的代码：
 
 - **[pi-durable](https://github.com/earendil-works/pi)** —— 持久化运行、崩溃恢复、重试、压缩、信号与休眠，全在它上面。我们不重写执行引擎。
 - **[magpie](https://github.com/yetone/magpie)** —— 一个网关说 OpenAI / Anthropic / Gemini 三种协议，路由组自动在多个免费模型间切换、失败换下一个。换模型不用改一行代码。
-- **[our-free-model](https://github.com/Ebony-Vinyl/dsh-our-free-model)** 及其 [magpie 插件](https://github.com/mu-zi-lee/magpie-our-free-model) —— 匿名免费模型池。
+- **[our-free-model](https://github.com/Ebony-Vinyl/dsh-our-free-model)** —— 匿名免费模型池，项目里带了一个瘦身的本地代理，负责在免费线路之间故障转移。
 - 上层这层薄薄的胶水（收件箱、发件箱、定时表、审批表、记忆目录、频道适配）是这个项目自己的，`packages/*/src` 加起来三千行上下，看得完。
 
 ```

@@ -7,6 +7,7 @@
  */
 import { createHash, timingSafeEqual } from 'node:crypto';
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
+import { parseCustomProvider, type SavedProvider } from '@pi-magpie-bot/brain';
 
 export interface SetupPageOptions {
 	/** What is wrong, in one line, in the user's words. */
@@ -40,7 +41,7 @@ export interface SetupPageOptions {
 	 */
 	password?: string;
 	/** Saves a key, or throws with the reason it could not be saved. */
-	onKey?: (input: { preset: string; key: string }) => Promise<string | undefined>;
+	onKey?: (input: SavedProvider) => Promise<string | undefined>;
 }
 
 /** What a key posted to the page is allowed to look like. */
@@ -48,6 +49,8 @@ export interface KeyForm {
 	preset: string;
 	key: string;
 	password?: string;
+	/** An endpoint of the user's own; the app sends this where the page has a dropdown. */
+	custom?: unknown;
 }
 
 /** Everything a model or a user typed goes through this before it is markup. */
@@ -320,19 +323,32 @@ async function saveKey(
 	}
 	const preset = typeof form.preset === 'string' ? form.preset : '';
 	const key = typeof form.key === 'string' ? form.key.trim() : '';
-	if (!key) return say(400, { error: 'key 不能是空的。' });
-	if (!options.presets?.some((entry) => entry.id === preset)) {
-		return say(400, { error: '没有这个厂商，换一个或者用下面的命令。' });
+	let saving: SavedProvider;
+	if (form.custom !== undefined) {
+		// The app's key sheet also takes an endpoint of the user's own; the page
+		// has a dropdown, so this branch is the app's.
+		try {
+			saving = parseCustomProvider(form.custom);
+		} catch (error) {
+			return say(400, { error: (error as Error).message });
+		}
+	} else {
+		if (!key) return say(400, { error: 'key 不能是空的。' });
+		if (!options.presets?.some((entry) => entry.id === preset)) {
+			return say(400, { error: '没有这个厂商，换一个或者用下面的命令。' });
+		}
+		saving = { preset, key };
 	}
 
 	try {
-		const note = await options.onKey({ preset, key });
+		const note = await options.onKey(saving);
 		return say(200, { ok: true, note: note ?? '加进去了，正在启动，等几秒刷新这一页。' });
 	} catch (error) {
 		// A failed save must not hand the key back out in its own message.
-		const said = ((error instanceof Error ? error.message : String(error)).split('\n')[0] ?? '').replaceAll(key, '***');
-		console.error('[setup] a key did not save:', said);
-		return say(400, { error: said });
+		const said = (error instanceof Error ? error.message : String(error)).split('\n')[0] ?? '';
+		const safe = saving.key ? said.replaceAll(saving.key, '***') : said;
+		console.error('[setup] a key did not save:', safe);
+		return say(400, { error: safe });
 	}
 }
 

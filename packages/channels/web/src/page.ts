@@ -12,9 +12,9 @@ export const PAGE = `<!doctype html>
 <link rel="icon" href="/icon-192.png">
 <link rel="apple-touch-icon" href="/apple-touch-icon.png">
 <meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-title" content="我的助理">
+<meta name="apple-mobile-web-app-title" content="喜鹊">
 <meta name="mobile-web-app-capable" content="yes">
-<title>我的助理</title>
+<title>喜鹊</title>
 <style>
   /* One place for the brand blue and the surfaces. #1d63d8 is the same hue as
      the app icon but dark enough that white text on it passes 4.5:1; #2f7cf6
@@ -51,7 +51,7 @@ export const PAGE = `<!doctype html>
   button { font: inherit; padding: 0 18px; border-radius: 12px; border: 0; background: var(--brand); color: #fff; }
   button:disabled { opacity: .5; }
 </style>
-<header>我的助理</header>
+<header>喜鹊</header>
 <div id="log" role="log" aria-live="polite" aria-label="对话"></div>
 <form id="form">
   <textarea id="text" rows="1" aria-label="给助理发消息" enterkeyhint="send"
@@ -263,7 +263,7 @@ export const LOGIN_PAGE = `<!doctype html>
 <link rel="icon" href="/icon-192.png">
 <link rel="apple-touch-icon" href="/apple-touch-icon.png">
 <meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-title" content="我的助理">
+<meta name="apple-mobile-web-app-title" content="喜鹊">
 <meta name="mobile-web-app-capable" content="yes">
 <title>进入助理</title>
 <style>

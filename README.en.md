@@ -1,4 +1,4 @@
-# pi-magpie-bot
+# 喜鹊 · pi-magpie-bot
 
 <p align="center">
   <img src="docs/banner.png" alt="pi-magpie-bot" width="860">
@@ -14,17 +14,17 @@
 
 <p align="center"><a href="README.md">中文</a> · <b>English</b> · <a href="#android-app">Android app</a> · <a href="#quick-start">Quick start</a> · <a href="#telegram">Telegram</a> · <a href="docs/architecture.md">Architecture</a> · <a href="docs/own-models.md">Own models</a></p>
 
-**An always-on personal assistant you run yourself.** It remembers things, keeps reminders across
-restarts, looks things up on the web, and lives in its own Android app, or on your computer or server
-behind a browser or Telegram. It speaks through free models out of the box: no account, no API key,
-no bill.
+**喜鹊 ("magpie") is an always-on personal assistant that lives in your own Android phone.** It
+remembers things, keeps reminders across restarts, looks things up on the web, and speaks through
+free models out of the box: no account, no API key, no bill. It also runs on a computer or server,
+behind a browser or Telegram.
 
 ```
 You: remind me to turn off the stove in ten minutes
-Bot: Right — I'll shout in 10 minutes.
+喜鹊: Right — I'll shout in 10 minutes.
 
-(ten minutes later, even if the machine has restarted)
-Bot: Time to turn off the stove.
+(ten minutes later, even if the phone has restarted)
+喜鹊: Time to turn off the stove.
 ```
 
 ## Why this exists
@@ -32,13 +32,13 @@ Bot: Time to turn off the stove.
 Products like Grok Bot are good, but your conversations, memories and schedule sit on someone
 else's server and you pay monthly for them. This project hands you the same pieces:
 
-- **Free to use.** The free pool comes from [our-free-model](https://github.com/Ebony-Vinyl/dsh-our-free-model)
-  through its [magpie plugin](https://github.com/mu-zi-lee/magpie-our-free-model), maintained by the
-  community: no account, no key. The first start installs it, signs in and builds the `free`
-  routing group; after that nobody touches it. Want more stability or a bigger model? Swap in
-  your own — it is one model name.
+- **Free to use.** The free pool comes from [our-free-model](https://github.com/Ebony-Vinyl/dsh-our-free-model),
+  installed and signed in on the first start, with two more account-free public endpoints (OVH,
+  Pollinations) behind it that it fails over to on a 429. Want more stability or a bigger model?
+  Swap in your own key or your own endpoint — it is one model name.
 - **Your records stay yours.** Conversations, memories and schedules are local SQLite and Markdown
-  files. Copy the folder and you have migrated (what the model sees is covered under Privacy below).
+  files — on the phone, or on your own machine. Copy the folder and you have migrated (what the
+  model sees is covered under Privacy below).
 - **Survives a kill.** A message is written to disk before it is handled; after a restart the work
   carries on, and nothing is answered twice. A message that was cut off mid-answer is closed and
   reported once — it does not come back as a second reply.
@@ -66,12 +66,15 @@ feel like apps such as Grok:
 - **Easy to read**: headings, lists, code blocks (one tap to copy) and tables are laid out; answers can
   be copied, shared or read aloud.
 - **Your choice of model**: each chat can use its own model, a "think harder" switch appears for
-  models that reason, photos can go to models that see, and one key in Settings connects DeepSeek,
-  Kimi, Qwen and five more.
-- **A place to go when the free pool is out**: when the free lanes are queued or dry, Settings has
-  a page listing the vendors that hand out an allowance on signup - Zhipu, Bailian, SiliconFlow,
-  ModelScope, Google, Groq and OpenRouter - with a link to each one's console and a key box to
-  paste into.
+  models that reason, and photos can go to models that see.
+- **A key of your own**: pick a vendor in Settings and paste its key to connect DeepSeek, Kimi,
+  Qwen and five more. When the free lanes are queued or dry, a page lists the vendors that hand out
+  an allowance on signup - Zhipu, Bailian, SiliconFlow, ModelScope, Google, Groq and OpenRouter -
+  with a link to each one's console.
+- **Endpoints of your own**: a relay you subscribe to, a private deployment, a model server at
+  home - if it speaks the OpenAI API, a name, a URL, the model names and a key put it in the model
+  list (magpie requires a key even where an endpoint does not; use a one-word placeholder there).
+  Nothing has to be on a list we keep.
 - **Voice input**, and dark, light or system theme.
 
 The first launch prepares the environment on the phone (about 300 MB, a few minutes); after that it
@@ -212,13 +215,21 @@ Not yet verified against a real bot, so please open an issue if it misbehaves.
 
 ## Bring your own model
 
-The free pool queues and has limits. For something steady, or a bigger model, there are two ways:
+The free pool queues and has limits. For something steady, or a bigger model, there are three ways:
 
 **Your own key** — no terminal needed: when the free pool has nothing to give, the bot puts up a
 page saying what is missing, with a vendor dropdown and a key box. Paste the key, press save, and
 the same process continues into the chat. To add another later, or from the command line,
 `magpie provider add deepseek sk-…` (`magpie presets` lists every vendor), or open `magpie web`
 (<http://127.0.0.1:3430>) and add it there.
+
+**An endpoint of your own** — anything OpenAI-compatible: a relay you subscribe to, a private
+deployment, a model server at home. The Android app has "endpoints of your own" in Settings; the
+command line:
+
+```sh
+magpie provider add my-relay url=https://api.example.com/v1 models=gpt-5,claude-sonnet-5-5 key=sk-…
+```
 
 **A local model** — start Ollama / vLLM / LM Studio on an OpenAI-compatible endpoint, then:
 

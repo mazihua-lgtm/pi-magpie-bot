@@ -8,8 +8,11 @@ export {
 	FREE_PLUGIN,
 	hasConfiguredModel,
 	installMagpie,
+	providerId,
 	releaseAsset,
 	signInFree,
+	type AddProviderOptions,
+	type CustomProvider,
 } from './install.ts';
 export { createMagpieProvider, openModels, toPiModel } from './provider.ts';
 export { ensureGateway, findMagpieBinary } from './supervise.ts';

@@ -129,9 +129,20 @@ class Api(context: Context) {
 	suspend fun addProvider(preset: String, key: String): String =
 		send("POST", "/api/providers", JSONObject().put("preset", preset).put("key", key)).optString("note")
 
+	/** An endpoint magpie has no preset for: a relay, a vendor of its own, a server at home. */
+	suspend fun addCustomProvider(name: String, url: String, models: String, key: String): String =
+		send("POST", "/api/providers", JSONObject().put("custom", custom(name, url, models, key))).optString("note")
+
 	/** The key page the bot serves when it has no model at all. */
 	suspend fun setupKey(preset: String, key: String): String =
 		send("POST", "/api/setup/key", JSONObject().put("preset", preset).put("key", key), readTimeout = 90_000).optString("note")
+
+	/** The same page, for an endpoint of the user's own. */
+	suspend fun setupCustomProvider(name: String, url: String, models: String, key: String): String =
+		send("POST", "/api/setup/key", JSONObject().put("custom", custom(name, url, models, key)), readTimeout = 90_000).optString("note")
+
+	private fun custom(name: String, url: String, models: String, key: String) =
+		JSONObject().put("name", name).put("url", url).put("models", models).put("key", key)
 
 	/**
 	 * The live stream for every chat of this phone. Ends when the connection

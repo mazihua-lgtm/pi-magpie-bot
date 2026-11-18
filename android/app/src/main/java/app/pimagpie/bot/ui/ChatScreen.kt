@@ -163,7 +163,7 @@ fun ChatScreen(model: AppModel, onMenu: () -> Unit) {
 						verticalAlignment = Alignment.CenterVertically,
 					) {
 						Text(
-							model.modelFor(chat)?.name?.let(::shortModel) ?: "我的助理",
+							model.modelFor(chat)?.name?.let(::shortModel) ?: "喜鹊",
 							style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
 							maxLines = 1, overflow = TextOverflow.Ellipsis,
 							modifier = Modifier.widthIn(max = 200.dp),

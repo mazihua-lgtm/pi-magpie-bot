@@ -8,7 +8,7 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join, resolve } from 'node:path';
-import { AppService, Bot } from '@pi-magpie-bot/brain';
+import { AppService, Bot, type SavedProvider } from '@pi-magpie-bot/brain';
 import { clearDataDirLock } from '@pi-magpie-bot/events';
 import { serveSetupPage, type SetupPageOptions, WebChannel } from '@pi-magpie-bot/channel-web';
 import {
@@ -24,6 +24,7 @@ import {
 	hasConfiguredModel,
 	installMagpie,
 	listModels,
+	providerId,
 } from '@pi-magpie-bot/gateway';
 import { VENDORS } from './vendors.ts';
 
@@ -98,11 +99,14 @@ async function magpieBinary(): Promise<string | undefined> {
 }
 
 /** Saves the key the first-run page took. It never comes back out of here. */
-async function saveKey(input: { preset: string; key: string }): Promise<string> {
+async function saveKey(input: SavedProvider): Promise<string> {
 	const binary = findMagpieBinary(env, [join(ourBinDir, 'magpie')]) ?? (await magpieBinary());
 	if (!binary) throw new Error('这台机器上没有 magpie，先跑一次 ./install.sh 再试。');
-	await addProvider({ binary, preset: input.preset, key: input.key });
-	return '加进 magpie 了，正在启动，等几秒刷新这一页。';
+	// A vendor of the user's own has no preset, so it is filed under an id made
+	// from its name or its host; magpie shows that id beside its models.
+	const preset = input.custom ? providerId(input.custom.name, input.custom.url) : (input.preset ?? '');
+	await addProvider({ binary, preset, key: input.key, custom: input.custom });
+	return input.custom ? `接上了 ${input.custom.name}，正在启动，等几秒刷新这一页。` : '加进 magpie 了，正在启动，等几秒刷新这一页。';
 }
 
 /**
@@ -456,9 +460,9 @@ if (!webDisabled) {
 			// only behind the password.
 			...(canSaveKey() && (['127.0.0.1', 'localhost', '::1'].includes(webHost) || env.WEB_PASSWORD)
 				? {
-						saveProvider: async (input: { preset: string; key: string }) => {
+						saveProvider: async (input: SavedProvider) => {
 							await saveKey(input);
-							return '加好了。助理正在重启载入新模型，几秒后就能用。';
+							return input.custom ? `接上了 ${input.custom.name}。助理正在重启载入它的模型，几秒后就能用。` : '加好了。助理正在重启载入新模型，几秒后就能用。';
 						},
 					}
 				: {}),

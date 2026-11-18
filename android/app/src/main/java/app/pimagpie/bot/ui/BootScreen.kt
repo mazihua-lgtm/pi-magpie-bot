@@ -156,6 +156,7 @@ fun KeyScreen(model: AppModel) {
 	val palette = LocalPalette.current
 	var picked by remember { mutableStateOf<Vendor?>(null) }
 	var showQuota by remember { mutableStateOf(false) }
+	var showCustom by remember { mutableStateOf(false) }
 	Column(Modifier.fillMaxSize().background(palette.ground).statusBarsPadding().navigationBarsPadding()) {
 		Column(Modifier.padding(horizontal = 24.dp, vertical = 28.dp)) {
 			Logo(40.dp)
@@ -168,6 +169,9 @@ fun KeyScreen(model: AppModel) {
 			)
 			TextButton(onClick = { showQuota = true }, contentPadding = androidx.compose.foundation.layout.PaddingValues(0.dp)) {
 				Text("不知道选哪家？这几家有免费额度", color = palette.link)
+			}
+			TextButton(onClick = { showCustom = true }, contentPadding = androidx.compose.foundation.layout.PaddingValues(0.dp)) {
+				Text("你有中转站或者自己的接口？直接填", color = palette.link)
 			}
 		}
 		if (model.vendors.isEmpty()) {
@@ -186,6 +190,7 @@ fun KeyScreen(model: AppModel) {
 			picked = vendor
 		}
 	}
+	if (showCustom) CustomProviderSheet(model) { showCustom = false }
 }
 
 @Composable

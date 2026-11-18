@@ -240,7 +240,7 @@ describe('models and thinking', () => {
 		await until(() => sent.length === 1);
 		expect(seen[0]).toMatchObject({ model: 'm1', reasoning: undefined });
 		// The system prompt is the conversation's instructions.
-		expect(JSON.stringify(seen[0]?.context.messages)).toContain('You are a personal assistant living in a chat window');
+		expect(JSON.stringify(seen[0]?.context.messages)).toContain('You are 喜鹊 (Magpie), a personal assistant living in a chat window');
 
 		app.updateChat(OWNER, chat.id, { thinking: true });
 		app.send(OWNER, chat.id, { text: '第二句' });
@@ -446,7 +446,7 @@ describe('approvals', () => {
 
 describe('model keys', () => {
 	it('lists the vendors, saves a key through the host, and restarts only when asked', async () => {
-		const saved: Array<{ preset: string; key: string }> = [];
+		const saved: Array<{ preset?: string; key: string; custom?: unknown }> = [];
 		let restarts = 0;
 		const { app } = await setup({
 			app: {
@@ -463,18 +463,47 @@ describe('model keys', () => {
 		expect(app.vendors()).toEqual([{ preset: 'deepseek', name: 'DeepSeek', signupUrl: 'https://platform.deepseek.com' }]);
 		// A vendor the guide names but the first-run list leaves out still goes
 		// through: magpie, not this list, decides which vendors it knows.
-		expect(await app.saveProvider('siliconflow', ' sk-123 ')).toBe('加好了');
-		await expect(app.saveProvider('Nope', 'sk-1')).rejects.toMatchObject({ status: 400 });
-		await expect(app.saveProvider('--help', 'sk-1')).rejects.toMatchObject({ status: 400 });
-		await expect(app.saveProvider('deepseek', 'sk 1')).rejects.toMatchObject({ status: 400 });
+		expect(await app.saveProvider({ preset: 'siliconflow', key: ' sk-123 ' })).toBe('加好了');
+		await expect(app.saveProvider({ preset: 'Nope', key: 'sk-1' })).rejects.toMatchObject({ status: 400 });
+		await expect(app.saveProvider({ preset: '--help', key: 'sk-1' })).rejects.toMatchObject({ status: 400 });
+		await expect(app.saveProvider({ preset: 'deepseek', key: 'sk 1' })).rejects.toMatchObject({ status: 400 });
 		expect(saved).toEqual([{ preset: 'siliconflow', key: 'sk-123' }]);
 		expect(restarts).toBe(0);
 		app.restart();
 		expect(restarts).toBe(1);
 	});
 
+	it("takes an endpoint of the user's own with a key", async () => {
+		const saved: Array<{ preset?: string; key: string; custom?: unknown }> = [];
+		const { app } = await setup({
+			app: {
+				vendors: [],
+				saveProvider: async (input) => {
+					saved.push(input);
+					return '加好了';
+				},
+			},
+		});
+		expect(await app.saveProvider({ custom: { name: ' 家里的服务器 ', url: 'http://192.168.1.9:11434/v1', models: 'qwen3:32b、llama3', key: ' sk-1 ' } })).toBe('加好了');
+		expect(saved).toEqual([{ key: 'sk-1', custom: { name: '家里的服务器', url: 'http://192.168.1.9:11434/v1', models: ['qwen3:32b', 'llama3'] } }]);
+
+		for (const bad of [
+			{ name: '', url: 'https://api.example.com/v1', models: 'm' },
+			{ name: 'x'.repeat(41), url: 'https://api.example.com/v1', models: 'm' },
+			{ name: 'ok', url: 'api.example.com', models: 'm' },
+			{ name: 'ok', url: 'file:///etc/passwd', models: 'm' },
+			{ name: 'ok', url: 'https://api.example.com/v1', models: '' },
+			{ name: 'ok', url: 'https://api.example.com/v1', models: 'm', key: 'sk 1' },
+			{ name: 'ok', url: 'https://api.example.com/v1', models: '-m' },
+		]) {
+			await expect(app.saveProvider({ custom: bad })).rejects.toMatchObject({ status: 400 });
+		}
+		expect(saved).toHaveLength(1);
+	});
+
 	it('says so where keys cannot be added', async () => {
 		const { app } = await setup();
-		await expect(app.saveProvider('deepseek', 'sk-1')).rejects.toMatchObject({ status: 501 });
+		await expect(app.saveProvider({ preset: 'deepseek', key: 'sk-1' })).rejects.toMatchObject({ status: 501 });
+		await expect(app.saveProvider({ custom: { name: 'x', url: 'https://api.example.com/v1', models: 'm' } })).rejects.toMatchObject({ status: 501 });
 	});
 });

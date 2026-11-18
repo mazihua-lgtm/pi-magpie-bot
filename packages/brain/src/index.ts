@@ -13,6 +13,7 @@ export {
 	AppError,
 	AppService,
 	cleanTitle,
+	parseCustomProvider,
 	type AppBackend,
 	type AppChat,
 	type AppEvent,
@@ -21,6 +22,8 @@ export {
 	type AppVendor,
 	type ChatPatch,
 	type OutgoingInput,
+	type ProviderKey,
+	type SavedProvider,
 } from './app.ts';
 export { appMessages, livePartial, type AppMessage, type LivePartial } from './messages.ts';
 export { toolLabel } from './tool-labels.ts';

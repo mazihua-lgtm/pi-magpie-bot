@@ -91,7 +91,7 @@ describe('the key box', () => {
 	});
 
 	it('takes a key, saves it, and lets the caller look again', async () => {
-		const saved: Array<{ preset: string; key: string }> = [];
+		const saved: Array<{ preset?: string; key: string; custom?: unknown }> = [];
 		const { url, fixed } = await serve({
 			title: '还不能聊天',
 			reason: '没有模型',
@@ -135,6 +135,32 @@ describe('the key box', () => {
 		});
 		expect(response.status).toBe(403);
 		expect(saved).toEqual([]);
+	});
+
+	it("takes an endpoint of the user's own from the app when there is no model yet", async () => {
+		const saved: Array<{ key: string; custom?: unknown }> = [];
+		const { url } = await serve({
+			title: '还不能聊天',
+			reason: '没有模型',
+			steps: [],
+			presets: VENDORS,
+			onKey: async (input) => {
+				saved.push(input);
+				return '接上了';
+			},
+		});
+		const send = (custom: unknown) =>
+			fetch(`${url}/api/setup/key`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ custom }) });
+
+		const bad = await send({ name: 'x', url: 'ftp://nas', models: 'm' });
+		expect(bad.status).toBe(400);
+		expect(((await bad.json()) as { error: string }).error).toContain('接口地址');
+		expect(saved).toHaveLength(0);
+
+		// The page stops itself once a key is saved, so the good one goes last.
+		const ok = await send({ name: '家里的服务器', url: 'http://192.168.1.9:11434/v1', models: 'qwen3:32b', key: 'sk-1' });
+		expect(ok.status).toBe(200);
+		expect(saved).toEqual([{ key: 'sk-1', custom: { name: '家里的服务器', url: 'http://192.168.1.9:11434/v1', models: ['qwen3:32b'] } }]);
 	});
 
 	it('says what magpie said, and never the key, when a key is refused', async () => {

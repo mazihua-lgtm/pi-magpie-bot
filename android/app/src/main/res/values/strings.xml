@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-	<string name="app_name">我的助理</string>
-	<string name="setup_title">我的助理</string>
+	<string name="app_name">喜鹊</string>
+	<string name="setup_title">喜鹊</string>
 	<string name="setup_body">第一次打开要在这台手机上准备运行环境，大约 300 MB，需要几分钟。\n\n请插着电、连着网，不要锁屏。准备好以后它会一直在后台运行，你说过的话和定下的提醒都留在这台手机上。</string>
 	<string name="setup_button">开始准备</string>
 	<string name="setup_retry">再试一次</string>

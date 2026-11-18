@@ -125,14 +125,23 @@ conversation become the owner's on first use.
 ## Model providers
 
 | GET | `/api/providers` | | `{ vendors: [{ preset, name, signupUrl }] }` |
-| POST | `/api/providers` | `{ preset, key }` | `{ ok: true, note }` then the process restarts to load the new models (the Android service brings it back in seconds) |
+| POST | `/api/providers` | `{ preset, key }`, or `{ custom: { name, url, models, key } }` | `{ ok: true, note }` then the process restarts to load the new models (the Android service brings it back in seconds) |
 
 `signupUrl` may be null. `preset` is one of magpie's own ids (`magpie presets`), written as a
 lowercase word. `GET` lists what the first run offers, but a preset that list leaves out is
-accepted too - magpie is what finally decides whether it knows the vendor. The process exits with
-code 0 right after the answer is sent; expect the connection to drop and `/healthz` to fail for a
-few seconds. Where this machine cannot add keys (the gateway runs elsewhere, or the page is
-reachable from other machines without a password) the answer is 501.
+accepted too - magpie is what finally decides whether it knows the vendor.
+
+`custom` is a vendor magpie has no preset for: an OpenAI-compatible endpoint the user runs or
+subscribes to. `url` must be http(s), `models` is a comma- or space-separated list of at most
+eight model names, `name` is what the app shows, and a `key`. magpie requires a key on every custom
+vendor it files, so an endpoint that needs none must be given a one-word placeholder - which is then
+sent as a Bearer token, so a public endpoint that rejects a bogus key will refuse. Nothing checks that
+the endpoint answers; magpie's own refusal is what the user is told.
+
+The process exits with code 0 right after the answer is sent; expect the connection to drop and
+`/healthz` to fail for a few seconds. Where this machine cannot add keys (the gateway runs
+elsewhere, or the page is reachable from other machines without a password) the answer is 501.
+`POST /api/setup/key` takes the same two shapes for the case where there is no model at all.
 
 ## Setup mode
 

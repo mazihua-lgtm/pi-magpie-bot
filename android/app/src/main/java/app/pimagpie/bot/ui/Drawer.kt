@@ -126,7 +126,7 @@ fun Drawer(model: AppModel, close: () -> Unit) {
 			Box(Modifier.size(34.dp).clip(CircleShape).background(palette.raisedHigh), contentAlignment = Alignment.Center) { Logo(18.dp) }
 			Spacer(Modifier.width(12.dp))
 			Column(Modifier.weight(1f)) {
-				Text("我的助理", style = MaterialTheme.typography.titleMedium)
+				Text("喜鹊", style = MaterialTheme.typography.titleMedium)
 				Row(verticalAlignment = Alignment.CenterVertically) {
 					Box(Modifier.size(6.dp).clip(CircleShape).background(if (model.connected) palette.live else palette.faint))
 					Spacer(Modifier.width(6.dp))
