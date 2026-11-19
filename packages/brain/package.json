@@ -17,6 +17,8 @@
 		"@earendil-works/pi-schema": "^1.5.2",
 		"@pi-magpie-bot/events": "workspace:*",
 		"@pi-magpie-bot/gateway": "workspace:*",
-		"@pi-magpie-bot/memory": "workspace:*"
+		"@pi-magpie-bot/memory": "workspace:*",
+		"imapflow": "^2.12.1",
+		"mailparser": "^3.14.5"
 	}
 }
